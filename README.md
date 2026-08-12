@@ -69,10 +69,18 @@ length prefix since it's a stream, UDP uses one frame per datagram).
 
 ## Status
 
-The `cifx` ctypes bindings target the documented cifX Device Driver API
-(`cifXUser.h`) function signatures. They have not yet been exercised
-against a physical CIFX card in this repository's test environment — do
-that verification on the target Windows machine with the driver
-installed before relying on `HilscherCifXBackend` in production. The
+The `cifx` ctypes bindings (error codes, `BOARD_INFORMATION` /
+`CHANNEL_INFORMATION` struct layout, and the `xChannelHostState` /
+`xChannelBusState` calling convention) have been cross-checked against
+Hilscher's own "PyCifx" reference demo (distributed from their Global
+Support knowledgebase) and corrected to match it where they initially
+differed. The one remaining unverified piece is the `xChannelWatchdog`
+command numbering (stop/start/trigger), since Hilscher's demo doesn't
+exercise that call — verify it against the driver installed on the
+target Windows machine before relying on `watchdog_trigger()` in
+production. Everything else has not yet been exercised against a
+physical CIFX card in this repository's test environment (there is no
+Windows machine or card here) — do that verification on the target
+machine before relying on `HilscherCifXBackend` in production. The
 gateway framing, dispatch, and both transports are covered by the test
 suite via `MockCifXBackend`.

@@ -122,7 +122,7 @@ class HilscherCifXBackend(CifXBackend):
         with self._lock:
             rc = self._lib.dll.xChannelBusState(
                 self._hchannel,
-                e.CIFX_BUS_STATE_CMD_READ,
+                e.CIFX_BUS_STATE_GETSTATE,
                 ct.byref(bus_state),
                 self.io_timeout_ms,
             )
@@ -131,7 +131,7 @@ class HilscherCifXBackend(CifXBackend):
 
             rc = self._lib.dll.xChannelHostState(
                 self._hchannel,
-                e.CIFX_HOST_STATE_CMD_READ,
+                e.CIFX_HOST_STATE_READ,
                 ct.byref(host_state),
                 self.io_timeout_ms,
             )
@@ -140,13 +140,15 @@ class HilscherCifXBackend(CifXBackend):
         return bus_state.value, host_state.value
 
     def set_host_state(self, ready: bool) -> None:
-        state = ct.c_uint32(
-            e.CIFX_HOST_STATE_READY if ready else e.CIFX_HOST_STATE_NOT_READY
-        )
+        # The cmd argument itself is the target state to set (confirmed
+        # against Hilscher's PyCifx demo) - not a separate "set" command
+        # plus a state value passed by pointer.
+        cmd = e.CIFX_HOST_STATE_READY if ready else e.CIFX_HOST_STATE_NOT_READY
+        state = ct.c_uint32(0)
         with self._lock:
             rc = self._lib.dll.xChannelHostState(
                 self._hchannel,
-                e.CIFX_HOST_STATE_CMD_SET,
+                cmd,
                 ct.byref(state),
                 self.io_timeout_ms,
             )

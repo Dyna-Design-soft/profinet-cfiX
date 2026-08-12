@@ -5,10 +5,12 @@ xDriverClose, xChannelOpen, xChannelClose, xChannelIORead, xChannelIOWrite,
 xChannelHostState, xChannelBusState, xChannelWatchdog and xChannelReset.
 
 On a Windows target with the Hilscher cifX driver installed, the driver
-DLL is loaded by name. Multiple historical DLL names have been used by
-different driver package versions, so a short candidate list is tried;
-set the CIFX_DLL_PATH environment variable (or pass dll_path explicitly)
-to point at a specific file instead.
+DLL is loaded by name. "cifx32dll.dll" is the name confirmed by Hilscher's
+own PyCifx reference demo (which loads it via
+`ctypes.util.find_library("cifx32dll")`); the others are unverified names
+seen referenced in some driver documentation, kept as fallbacks. Set the
+CIFX_DLL_PATH environment variable (or pass dll_path explicitly) to point
+at a specific file instead of relying on the search order.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Optional
 from .structures import BOARD_INFORMATION, CHANNEL_INFORMATION, HANDLE
 
 DEFAULT_DLL_CANDIDATES = (
+    "cifx32dll.dll",
     "cifXAPI.dll",
     "cifX32DRV.dll",
     "cifX64DRV.dll",
@@ -69,17 +72,17 @@ class CifXLibrary:
         dll = self.dll
 
         dll.xDriverOpen.argtypes = [ct.POINTER(HANDLE)]
-        dll.xDriverOpen.restype = ct.c_int32
+        dll.xDriverOpen.restype = ct.c_uint32
 
         dll.xDriverClose.argtypes = [HANDLE]
-        dll.xDriverClose.restype = ct.c_int32
+        dll.xDriverClose.restype = ct.c_uint32
 
         dll.xDriverGetErrorDescription.argtypes = [
             ct.c_int32,
             ct.c_char_p,
             ct.c_uint32,
         ]
-        dll.xDriverGetErrorDescription.restype = ct.c_int32
+        dll.xDriverGetErrorDescription.restype = ct.c_uint32
 
         dll.xDriverEnumBoards.argtypes = [
             HANDLE,
@@ -87,7 +90,7 @@ class CifXLibrary:
             ct.c_uint32,
             ct.POINTER(BOARD_INFORMATION),
         ]
-        dll.xDriverEnumBoards.restype = ct.c_int32
+        dll.xDriverEnumBoards.restype = ct.c_uint32
 
         dll.xChannelOpen.argtypes = [
             HANDLE,
@@ -95,17 +98,17 @@ class CifXLibrary:
             ct.c_uint32,
             ct.POINTER(HANDLE),
         ]
-        dll.xChannelOpen.restype = ct.c_int32
+        dll.xChannelOpen.restype = ct.c_uint32
 
         dll.xChannelClose.argtypes = [HANDLE]
-        dll.xChannelClose.restype = ct.c_int32
+        dll.xChannelClose.restype = ct.c_uint32
 
         dll.xChannelInfo.argtypes = [
             HANDLE,
             ct.c_uint32,
             ct.POINTER(CHANNEL_INFORMATION),
         ]
-        dll.xChannelInfo.restype = ct.c_int32
+        dll.xChannelInfo.restype = ct.c_uint32
 
         dll.xChannelIORead.argtypes = [
             HANDLE,
@@ -115,7 +118,7 @@ class CifXLibrary:
             ct.c_void_p,
             ct.c_uint32,
         ]
-        dll.xChannelIORead.restype = ct.c_int32
+        dll.xChannelIORead.restype = ct.c_uint32
 
         dll.xChannelIOWrite.argtypes = [
             HANDLE,
@@ -125,7 +128,7 @@ class CifXLibrary:
             ct.c_void_p,
             ct.c_uint32,
         ]
-        dll.xChannelIOWrite.restype = ct.c_int32
+        dll.xChannelIOWrite.restype = ct.c_uint32
 
         dll.xChannelHostState.argtypes = [
             HANDLE,
@@ -133,7 +136,7 @@ class CifXLibrary:
             ct.POINTER(ct.c_uint32),
             ct.c_uint32,
         ]
-        dll.xChannelHostState.restype = ct.c_int32
+        dll.xChannelHostState.restype = ct.c_uint32
 
         dll.xChannelBusState.argtypes = [
             HANDLE,
@@ -141,14 +144,14 @@ class CifXLibrary:
             ct.POINTER(ct.c_uint32),
             ct.c_uint32,
         ]
-        dll.xChannelBusState.restype = ct.c_int32
+        dll.xChannelBusState.restype = ct.c_uint32
 
         dll.xChannelWatchdog.argtypes = [
             HANDLE,
             ct.c_uint32,
             ct.POINTER(ct.c_uint32),
         ]
-        dll.xChannelWatchdog.restype = ct.c_int32
+        dll.xChannelWatchdog.restype = ct.c_uint32
 
         dll.xChannelReset.argtypes = [HANDLE, ct.c_uint32, ct.c_uint32]
-        dll.xChannelReset.restype = ct.c_int32
+        dll.xChannelReset.restype = ct.c_uint32
