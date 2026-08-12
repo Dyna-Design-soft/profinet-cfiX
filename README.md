@@ -25,6 +25,12 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
   (`protocol.py`), request dispatch (`dispatch.py`), transports
   (`tcp_server.py`, `udp_server.py`), config (`config.py`) and CLI
   (`cli.py`).
+- `src/cfix_api/gui/` — an optional PySide6 desktop control panel
+  (`cfix-gateway-gui`) that runs the same `GatewayRunner` in-process:
+  start/stop, edit config, and watch live bus/host state, TCP client
+  count, and the input/output process-data bytes, with a manual write
+  buffer for commissioning. Requires the `gui` extra (`pip install
+  -e ".[gui]"`); everything else in this repo works without it.
 - `docs/PROTOCOL.md` — the gateway's binary wire protocol.
 - `docs/LABVIEW_INTEGRATION.md` — how to build a LabVIEW TCP/UDP client
   against it.
@@ -59,6 +65,20 @@ python examples/python_client_example.py --transport tcp --port 9800
 # (board_name, channel, dll_path if needed) then:
 python -m cfix_api.gateway.cli --config config/gateway.example.json
 ```
+
+## Desktop GUI
+
+```bash
+pip install -e ".[gui]"
+python -m cfix_api.gui.app       # or the `cfix-gateway-gui` console script
+```
+
+Opens a control panel to configure and Start/Stop the gateway (defaults
+to the mock backend, so it runs without hardware), watch bus/host state
+and TCP client count live, and view/write the process-data bytes at a
+chosen offset for commissioning. It runs the gateway in-process — one
+app instead of the `cfix-gateway` CLI, not a separate monitor for an
+already-running one.
 
 ## Wire protocol
 

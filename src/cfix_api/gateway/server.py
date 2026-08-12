@@ -60,6 +60,11 @@ class GatewayRunner:
         if not self._tcp_server and not self._udp_server:
             raise RuntimeError("neither TCP nor UDP is enabled in the gateway config")
 
+    @property
+    def tcp_client_count(self) -> int | None:
+        """Number of currently connected TCP clients, or None if TCP is disabled."""
+        return self._tcp_server.connection_count if self._tcp_server else None
+
     def stop(self) -> None:
         if self._tcp_server:
             self._tcp_server.shutdown()

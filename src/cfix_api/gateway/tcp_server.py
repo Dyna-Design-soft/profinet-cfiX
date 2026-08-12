@@ -35,9 +35,11 @@ def _recv_exact(sock, n: int) -> bytes:
 
 class _Handler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
-        backend: CifXBackend = self.server.backend  # type: ignore[attr-defined]
+        server: TcpGatewayServer = self.server  # type: ignore[assignment]
+        backend: CifXBackend = server.backend
         peer = self.client_address
         logger.info("TCP client connected: %s", peer)
+        server._change_connection_count(1)
         try:
             while True:
                 try:
@@ -56,6 +58,7 @@ class _Handler(socketserver.BaseRequestHandler):
         except OSError as exc:
             logger.info("TCP client %s connection error: %s", peer, exc)
         finally:
+            server._change_connection_count(-1)
             logger.info("TCP client disconnected: %s", peer)
 
 
@@ -65,7 +68,18 @@ class TcpGatewayServer(socketserver.ThreadingTCPServer):
 
     def __init__(self, host: str, port: int, backend: CifXBackend):
         self.backend = backend
+        self._connection_count = 0
+        self._connection_lock = threading.Lock()
         super().__init__((host, port), _Handler)
+
+    def _change_connection_count(self, delta: int) -> None:
+        with self._connection_lock:
+            self._connection_count += delta
+
+    @property
+    def connection_count(self) -> int:
+        with self._connection_lock:
+            return self._connection_count
 
     def serve_forever_in_thread(self) -> threading.Thread:
         thread = threading.Thread(target=self.serve_forever, name="cfix-tcp-gateway", daemon=True)
