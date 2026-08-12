@@ -1,0 +1,16 @@
+{
+  "tcp": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 9800
+  },
+  "udp": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 9801
+  },
+  "cifx": {
+    "mock": true
+  },
+  "log_level": "INFO"
+}

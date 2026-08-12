@@ -1,0 +1,20 @@
+{
+  "tcp": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 9800
+  },
+  "udp": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 9801
+  },
+  "cifx": {
+    "board_name": "cifX0",
+    "channel": 0,
+    "io_timeout_ms": 100,
+    "dll_path": null,
+    "mock": false
+  },
+  "log_level": "INFO"
+}

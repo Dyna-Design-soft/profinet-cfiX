@@ -1,0 +1,85 @@
+import socket
+import struct
+import time
+
+import pytest
+
+from cfix_api.cifx.backend import MockCifXBackend
+from cfix_api.gateway.protocol import Command, Request, Status, decode_response, encode_request
+from cfix_api.gateway.tcp_server import TcpGatewayServer
+
+LENGTH_PREFIX = struct.Struct(">I")
+
+
+@pytest.fixture
+def tcp_gateway():
+    backend = MockCifXBackend()
+    backend.open()
+    server = TcpGatewayServer("127.0.0.1", 0, backend)
+    server.serve_forever_in_thread()
+    yield server
+    server.shutdown()
+    server.server_close()
+    backend.close()
+
+
+def _send_request(sock: socket.socket, req: Request) -> bytes:
+    frame = encode_request(req)
+    sock.sendall(LENGTH_PREFIX.pack(len(frame)) + frame)
+    (length,) = LENGTH_PREFIX.unpack(_recv_exact(sock, 4))
+    return _recv_exact(sock, length)
+
+
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    chunks = []
+    remaining = n
+    while remaining > 0:
+        chunk = sock.recv(remaining)
+        assert chunk, "connection closed unexpectedly"
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def test_write_then_read_output_roundtrip(tcp_gateway):
+    host, port = tcp_gateway.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        write_req = Request(
+            command=Command.WRITE_OUTPUT, area=0, offset=0, length=4, data=b"\x11\x22\x33\x44"
+        )
+        resp_frame = _send_request(sock, write_req)
+        resp = decode_response(resp_frame)
+        assert resp.status == Status.OK
+
+        read_req = Request(command=Command.READ_OUTPUT, area=0, offset=0, length=4)
+        resp_frame = _send_request(sock, read_req)
+        resp = decode_response(resp_frame)
+        assert resp.status == Status.OK
+        assert resp.data == b"\x11\x22\x33\x44"
+
+
+def test_get_status(tcp_gateway):
+    host, port = tcp_gateway.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        resp_frame = _send_request(sock, Request(command=Command.GET_STATUS, area=0, offset=0, length=0))
+        resp = decode_response(resp_frame)
+        assert resp.status == Status.OK
+        assert len(resp.data) == 2
+
+
+def test_pipelined_requests_answered_in_order(tcp_gateway):
+    host, port = tcp_gateway.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        for offset in range(3):
+            data = bytes([offset, offset, offset, offset])
+            resp_frame = _send_request(
+                sock, Request(command=Command.WRITE_OUTPUT, area=0, offset=offset * 4, length=4, data=data)
+            )
+            assert decode_response(resp_frame).status == Status.OK
+
+        for offset in range(3):
+            resp_frame = _send_request(
+                sock, Request(command=Command.READ_OUTPUT, area=0, offset=offset * 4, length=4)
+            )
+            resp = decode_response(resp_frame)
+            assert resp.data == bytes([offset, offset, offset, offset])
