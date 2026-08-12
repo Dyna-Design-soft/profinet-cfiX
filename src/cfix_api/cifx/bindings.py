@@ -5,12 +5,21 @@ xDriverClose, xChannelOpen, xChannelClose, xChannelIORead, xChannelIOWrite,
 xChannelHostState, xChannelBusState, xChannelWatchdog and xChannelReset.
 
 On a Windows target with the Hilscher cifX driver installed, the driver
-DLL is loaded by name. "cifx32dll.dll" is the name confirmed by Hilscher's
-own PyCifx reference demo (which loads it via
-`ctypes.util.find_library("cifx32dll")`); the others are unverified names
-seen referenced in some driver documentation, kept as fallbacks. Set the
-CIFX_DLL_PATH environment variable (or pass dll_path explicitly) to point
-at a specific file instead of relying on the search order.
+DLL is loaded by name. Confirmed names: "cifx32dll.dll" is the 32-bit
+driver DLL Hilscher's own PyCifx reference demo loads (via
+`ctypes.util.find_library("cifx32dll")`); "cifX32dll64.dll" is the
+64-bit driver DLL's real (if confusingly named) filename, per a
+Hilscher support interaction on the NI forums - a 64-bit Python
+process (required for PySide6, which has no 32-bit Windows wheels)
+needs this one, not the 32-bit name despite the similar look. "cifXAPI.dll"
+is a distinct, higher-level API DLL name also referenced in that same
+support thread for some driver versions. "cifX32DRV.dll"/"cifX64DRV.dll"
+are unverified names seen in older driver documentation, kept as
+last-resort fallbacks. None of this has been exercised against a real
+driver install in this repo's test environment (Linux-only) - if
+auto-detection doesn't find the right one, set CIFX_DLL_PATH (or pass
+dll_path explicitly) to the exact file from your driver's installation
+directory instead of relying on the search order.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from typing import Optional
 from .structures import BOARD_INFORMATION, CHANNEL_INFORMATION, HANDLE
 
 DEFAULT_DLL_CANDIDATES = (
+    "cifX32dll64.dll",
     "cifx32dll.dll",
     "cifXAPI.dll",
     "cifX32DRV.dll",
