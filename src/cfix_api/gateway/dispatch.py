@@ -35,7 +35,7 @@ def _execute(backend: CifXBackend, request: Request) -> Response:
         return Response(status=Status.OK, command=request.command)
 
     if request.command == Command.READ_OUTPUT:
-        data = backend.io_read(request.area, request.offset, request.length)
+        data = backend.io_read_output(request.area, request.offset, request.length)
         return Response(status=Status.OK, command=request.command, data=data)
 
     if request.command == Command.GET_STATUS:

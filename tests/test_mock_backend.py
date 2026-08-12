@@ -19,6 +19,13 @@ def test_io_write_then_read():
         assert backend.io_read(0, 10, 4) == b"\xde\xad\xbe\xef"
 
 
+def test_io_write_then_read_output():
+    backend = MockCifXBackend()
+    with backend:
+        backend.io_write(0, 10, b"\xde\xad\xbe\xef")
+        assert backend.io_read_output(0, 10, 4) == b"\xde\xad\xbe\xef"
+
+
 def test_io_read_out_of_bounds_raises():
     backend = MockCifXBackend(area_size=16)
     with backend:

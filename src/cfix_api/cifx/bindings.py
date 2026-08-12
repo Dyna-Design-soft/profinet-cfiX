@@ -130,6 +130,18 @@ class CifXLibrary:
         ]
         dll.xChannelIOWrite.restype = ct.c_uint32
 
+        # Reads back the output process-data image as last written by
+        # xChannelIOWrite. Confirmed signature (no timeout argument) from
+        # Hilscher's PyCifx demo.
+        dll.xChannelIOReadSendData.argtypes = [
+            HANDLE,
+            ct.c_uint32,
+            ct.c_uint32,
+            ct.c_uint32,
+            ct.c_void_p,
+        ]
+        dll.xChannelIOReadSendData.restype = ct.c_uint32
+
         dll.xChannelHostState.argtypes = [
             HANDLE,
             ct.c_uint32,

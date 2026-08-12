@@ -28,10 +28,22 @@ class CifXBackend(abc.ABC):
     def close(self) -> None: ...
 
     @abc.abstractmethod
-    def io_read(self, area: int, offset: int, length: int) -> bytes: ...
+    def io_read(self, area: int, offset: int, length: int) -> bytes:
+        """Reads the channel's input process-data image (data from the drive)."""
 
     @abc.abstractmethod
-    def io_write(self, area: int, offset: int, data: bytes) -> None: ...
+    def io_write(self, area: int, offset: int, data: bytes) -> None:
+        """Writes the channel's output process-data image (data to the drive)."""
+
+    @abc.abstractmethod
+    def io_read_output(self, area: int, offset: int, length: int) -> bytes:
+        """Reads back the output process-data image last written by io_write.
+
+        This is a distinct operation from io_read: on real hardware,
+        xChannelIORead always reads the *input* image, never an echo of
+        what was written. Reading back the output image needs
+        xChannelIOReadSendData instead.
+        """
 
     @abc.abstractmethod
     def get_status(self) -> tuple[int, int]:
@@ -115,6 +127,16 @@ class HilscherCifXBackend(CifXBackend):
             )
         if rc != e.CIFX_NO_ERROR:
             raise e.CifXError("xChannelIOWrite", rc)
+
+    def io_read_output(self, area: int, offset: int, length: int) -> bytes:
+        buf = ct.create_string_buffer(length)
+        with self._lock:
+            rc = self._lib.dll.xChannelIOReadSendData(
+                self._hchannel, area, offset, length, buf
+            )
+        if rc != e.CIFX_NO_ERROR:
+            raise e.CifXError("xChannelIOReadSendData", rc)
+        return buf.raw[:length]
 
     def get_status(self) -> tuple[int, int]:
         bus_state = ct.c_uint32()
@@ -214,6 +236,12 @@ class MockCifXBackend(CifXBackend):
             if offset + len(data) > len(buf):
                 raise e.CifXError("io_write", e.CIFX_INVALID_PARAMETER)
             buf[offset : offset + len(data)] = data
+
+    def io_read_output(self, area: int, offset: int, length: int) -> bytes:
+        # The mock keeps a single buffer per area (there's no real drive
+        # echoing data back), so reading the output image back is the
+        # same buffer io_write() just wrote.
+        return self.io_read(area, offset, length)
 
     def get_status(self) -> tuple[int, int]:
         self._check_open()
