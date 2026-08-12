@@ -99,6 +99,42 @@ it does not parse drive telegrams. See `docs/PROTOCOL.md` for the exact
 frame layout (both transports share the same frame; TCP adds a 4-byte
 length prefix since it's a stream, UDP uses one frame per datagram).
 
+## Latency (target: 20-50ms cyclic round trip)
+
+A cyclic control loop's total latency has three independent pieces —
+only the middle one is this repo's to control:
+
+1. **LabVIEW ↔ gateway**, over TCP or UDP.
+2. **Gateway ↔ cifX driver**, one `xChannelIORead`/`xChannelIOWrite` call
+   per direction, bounded by `cifx.io_timeout_ms` (default lowered to
+   **20ms** - this is a call timeout, not the fieldbus cycle time; a call
+   that already has fresh data returns near-instantly regardless).
+3. **CIFX card ↔ drive**, the actual PROFINET RT cycle. This is
+   configured on the card itself via Hilscher's bus configuration tool
+   (e.g. SycoN/netDevice) - typically 1-8ms on netX hardware - entirely
+   outside this gateway's code.
+
+For (1), TCP is a lock-step small-frame request/response protocol, which
+is exactly the pattern Nagle's algorithm (batching small writes) plus
+delayed ACK is known to stall by tens of milliseconds - landing right in
+the middle of a 20-50ms budget if it triggers. The gateway now sets
+`TCP_NODELAY` on every accepted connection to rule that out server-side;
+`docs/LABVIEW_INTEGRATION.md` already documents writing the length prefix
+and frame as a single concatenated write, which avoids the split-write
+pattern that triggers it in the first place. UDP has no such issue at
+all, at the cost of being unacknowledged/unordered - prefer it if TCP
+still shows jitter you can't explain.
+
+**Measured** (this repo's actual software overhead, loopback, mock
+backend - i.e. pieces (1)+(2) here, not (3)): `python
+examples/latency_benchmark.py --transport tcp --port 9800 -n 1000` gives
+a ~0.2ms median / ~2ms max round trip; UDP ~0.8ms median / ~2.8ms max.
+Both are roughly two orders of magnitude under budget over loopback, but
+loopback isn't your real network or your real card - run the same
+benchmark against your actual deployment (real LabVIEW-side machine,
+real CIFX card, `mock: false`) to get a real number instead of trusting
+this one.
+
 ## Status
 
 The `cifx` ctypes bindings (error codes, `BOARD_INFORMATION` /

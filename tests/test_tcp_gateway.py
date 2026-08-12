@@ -6,7 +6,7 @@ import pytest
 
 from cfix_api.cifx.backend import MockCifXBackend
 from cfix_api.gateway.protocol import Command, Request, Status, decode_response, encode_request
-from cfix_api.gateway.tcp_server import TcpGatewayServer
+from cfix_api.gateway.tcp_server import TcpGatewayServer, _Handler
 
 LENGTH_PREFIX = struct.Struct(">I")
 
@@ -83,3 +83,22 @@ def test_pipelined_requests_answered_in_order(tcp_gateway):
             )
             resp = decode_response(resp_frame)
             assert resp.data == bytes([offset, offset, offset, offset])
+
+
+def test_handler_disables_nagle_on_accepted_socket():
+    """TCP_NODELAY matters for this lock-step small-frame protocol - see
+    the "Latency" section in README.md. Regression-guard it directly
+    since it isn't otherwise observable from a test client socket."""
+
+    class _FakeSocket:
+        def __init__(self):
+            self.calls = []
+
+        def setsockopt(self, level, optname, value):
+            self.calls.append((level, optname, value))
+
+    handler = _Handler.__new__(_Handler)  # bypass BaseRequestHandler.__init__
+    handler.request = _FakeSocket()
+    handler.setup()
+
+    assert (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) in handler.request.calls

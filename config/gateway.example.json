@@ -12,7 +12,7 @@
   "cifx": {
     "board_name": "cifX0",
     "channel": 0,
-    "io_timeout_ms": 100,
+    "io_timeout_ms": 20,
     "dll_path": null,
     "mock": false
   },

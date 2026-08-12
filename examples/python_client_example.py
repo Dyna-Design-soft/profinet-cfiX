@@ -41,6 +41,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 def send_tcp(host: str, port: int, req: Request):
     frame = encode_request(req)
     with socket.create_connection((host, port), timeout=2) as sock:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.sendall(LENGTH_PREFIX.pack(len(frame)) + frame)
         (length,) = LENGTH_PREFIX.unpack(_recv_exact(sock, 4))
         return decode_response(_recv_exact(sock, length))

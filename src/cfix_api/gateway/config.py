@@ -29,7 +29,13 @@ class UdpConfig:
 class CifxConfig:
     board_name: str = "cifX0"
     channel: int = 0
-    io_timeout_ms: int = 100
+    # How long a single xChannelIORead/Write/etc. driver call is allowed to
+    # block waiting for a result - not the PROFINET fieldbus cycle time
+    # (that's configured on the card itself via Hilscher's bus config
+    # tool). Kept low so one stalled driver call can't by itself blow a
+    # tight end-to-end cyclic latency budget; raise it if your setup needs
+    # more headroom than a fast cyclic target allows.
+    io_timeout_ms: int = 20
     dll_path: Optional[str] = None
     mock: bool = False
 

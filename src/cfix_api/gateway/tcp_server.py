@@ -8,6 +8,7 @@ on a connection are handled and answered strictly in order.
 from __future__ import annotations
 
 import logging
+import socket
 import socketserver
 import struct
 import threading
@@ -34,6 +35,14 @@ def _recv_exact(sock, n: int) -> bytes:
 
 
 class _Handler(socketserver.BaseRequestHandler):
+    def setup(self) -> None:
+        # This protocol is a small-frame, lock-step request/response
+        # exchange (send, wait for the reply, repeat) - exactly the
+        # pattern Nagle's algorithm (batching small writes) plus the
+        # peer's delayed ACK can stall by tens of milliseconds. Disabling
+        # it matters for a 20-50ms cyclic latency budget.
+        self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
     def handle(self) -> None:
         server: TcpGatewayServer = self.server  # type: ignore[assignment]
         backend: CifXBackend = server.backend
