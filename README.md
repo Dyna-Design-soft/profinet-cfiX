@@ -23,8 +23,9 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
   (`HilscherCifXBackend`) and mock (`MockCifXBackend`) implementation.
 - `src/cfix_api/gateway/` — the TCP/UDP gateway: wire protocol codec
   (`protocol.py`), request dispatch (`dispatch.py`), transports
-  (`tcp_server.py`, `udp_server.py`), config (`config.py`) and CLI
-  (`cli.py`).
+  (`tcp_server.py`, `udp_server.py`), a bounded live request/response
+  recorder for the GUI's Diagnostics window (`traffic_log.py`), config
+  (`config.py`) and CLI (`cli.py`).
 - `src/cfix_api/gui/` — an optional PySide6 desktop app
   (`cfix-gateway-gui`) that runs the same `GatewayRunner` in-process and
   auto-starts it on launch; a "Gateway Configuration" dialog (TCP/UDP)
@@ -85,6 +86,11 @@ persisted to `~/.cfix_gateway/gui_config.json` independent of the CLI's
 - **Gateway Configuration…** — TCP/UDP enabled/host/port.
 - **DLL Configuration…** — board name, channel, IO timeout, driver DLL
   path, and the mock-backend toggle.
+- **Diagnostics…** — a non-modal window with a live table of recent
+  TCP/UDP requests/responses (decoded: command, area/offset/length,
+  status, data) and a live hex view of the card's current input/output
+  process data at a chosen offset. Safe to leave open while the gateway
+  keeps running; survives Restart Gateway / config changes.
 - **Restart Gateway** — manual recovery (e.g. after fixing a cable or a
   bad DLL path) without closing the app.
 - **Log** — live gateway log output.

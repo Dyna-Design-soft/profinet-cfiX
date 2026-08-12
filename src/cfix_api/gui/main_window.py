@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..gateway.server import GatewayRunner
+from .diagnostics_window import DiagnosticsWindow
 from .dll_config_dialog import DllConfigDialog
 from .gateway_config_dialog import GatewayConfigDialog
 from .gui_settings import DEFAULT_SETTINGS_PATH, load_settings, save_settings
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
         self._settings_path = settings_path
         self.config = load_settings(settings_path)
         self.runner: GatewayRunner | None = None
+        self._diagnostics_window: DiagnosticsWindow | None = None
 
         self._build_ui()
         log_handler.emitter.log_emitted.connect(self._append_log)
@@ -90,12 +92,15 @@ class MainWindow(QMainWindow):
         button_row = QHBoxLayout()
         self.gateway_config_btn = QPushButton("Gateway Configuration…")
         self.dll_config_btn = QPushButton("DLL Configuration…")
+        self.diagnostics_btn = QPushButton("Diagnostics…")
         self.restart_btn = QPushButton("Restart Gateway")
         self.gateway_config_btn.clicked.connect(self._open_gateway_config)
         self.dll_config_btn.clicked.connect(self._open_dll_config)
+        self.diagnostics_btn.clicked.connect(self._open_diagnostics)
         self.restart_btn.clicked.connect(self._restart_gateway)
         button_row.addWidget(self.gateway_config_btn)
         button_row.addWidget(self.dll_config_btn)
+        button_row.addWidget(self.diagnostics_btn)
         button_row.addStretch()
         button_row.addWidget(self.restart_btn)
         layout.addLayout(button_row)
@@ -128,6 +133,13 @@ class MainWindow(QMainWindow):
             self.config = dialog.apply_to(self.config)
             save_settings(self.config, self._settings_path)
             self._restart_gateway()
+
+    def _open_diagnostics(self) -> None:
+        if self._diagnostics_window is None:
+            self._diagnostics_window = DiagnosticsWindow(self, self)
+        self._diagnostics_window.show()
+        self._diagnostics_window.raise_()
+        self._diagnostics_window.activateWindow()
 
     # ------------------------------------------------------------------
     # Gateway lifecycle
@@ -196,5 +208,7 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(text)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._diagnostics_window is not None:
+            self._diagnostics_window.close()
         self._stop_gateway()
         super().closeEvent(event)

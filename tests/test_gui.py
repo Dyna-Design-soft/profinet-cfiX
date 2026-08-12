@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from cfix_api.gateway.config import CifxConfig, GatewayConfig, TcpConfig, UdpConfig  # noqa: E402
 from cfix_api.gateway.protocol import Command, Request, decode_response, encode_request  # noqa: E402
+from cfix_api.gui.diagnostics_window import DiagnosticsWindow  # noqa: E402
 from cfix_api.gui.dll_config_dialog import DllConfigDialog  # noqa: E402
 from cfix_api.gui.gateway_config_dialog import GatewayConfigDialog  # noqa: E402
 from cfix_api.gui.gui_settings import load_settings, save_settings  # noqa: E402
@@ -190,3 +191,50 @@ def test_tcp_client_count_reflects_active_connection(window):
             break
         time.sleep(0.05)
     assert window.tcp_clients_label.text() == "0"
+
+
+def test_diagnostics_window_shows_not_running_when_gateway_stopped(window):
+    diag = DiagnosticsWindow(window)
+    try:
+        diag._refresh()
+        assert "not running" in diag.traffic_status_label.text().lower()
+        assert diag.input_hex_view.text() == "-"
+    finally:
+        diag.close()
+
+
+def test_diagnostics_window_shows_traffic_and_io_after_request(window):
+    window.config.tcp.port = 19868
+    window.config.udp.port = 19869
+    window._start_gateway()
+
+    host, port = window.runner._tcp_server.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        frame = encode_request(
+            Request(command=Command.WRITE_OUTPUT, area=0, offset=0, length=4, data=b"\xde\xad\xbe\xef")
+        )
+        sock.sendall(struct.pack(">I", len(frame)) + frame)
+        (length,) = struct.unpack(">I", sock.recv(4))
+        decode_response(sock.recv(length))
+
+    diag = DiagnosticsWindow(window)
+    try:
+        diag._refresh()
+        assert diag.traffic_table.rowCount() == 1
+        assert "WRITE_OUTPUT" in diag.traffic_table.item(0, 3).text()
+        assert "status=OK" in diag.traffic_table.item(0, 4).text()
+        assert diag.output_hex_view.text().startswith("DE AD BE EF")
+
+        diag._clear_traffic_log()
+        assert diag.traffic_table.rowCount() == 0
+    finally:
+        diag.close()
+
+
+def test_open_diagnostics_reuses_same_window_instance(window):
+    window._open_diagnostics()
+    first = window._diagnostics_window
+    window._open_diagnostics()
+    second = window._diagnostics_window
+    assert first is second
+    first.close()

@@ -9,6 +9,7 @@ import time
 from ..cifx.backend import CifXBackend, HilscherCifXBackend, MockCifXBackend
 from .config import GatewayConfig
 from .tcp_server import TcpGatewayServer
+from .traffic_log import TrafficLog
 from .udp_server import UdpGatewayServer
 
 logger = logging.getLogger("cfix_api.gateway")
@@ -32,6 +33,7 @@ class GatewayRunner:
     def __init__(self, config: GatewayConfig):
         self.config = config
         self.backend = build_backend(config)
+        self.traffic_log = TrafficLog()
         self._tcp_server: TcpGatewayServer | None = None
         self._udp_server: UdpGatewayServer | None = None
 
@@ -45,14 +47,14 @@ class GatewayRunner:
 
         if self.config.tcp.enabled:
             self._tcp_server = TcpGatewayServer(
-                self.config.tcp.host, self.config.tcp.port, self.backend
+                self.config.tcp.host, self.config.tcp.port, self.backend, self.traffic_log
             )
             self._tcp_server.serve_forever_in_thread()
             logger.info("TCP gateway listening on %s:%d", self.config.tcp.host, self.config.tcp.port)
 
         if self.config.udp.enabled:
             self._udp_server = UdpGatewayServer(
-                self.config.udp.host, self.config.udp.port, self.backend
+                self.config.udp.host, self.config.udp.port, self.backend, self.traffic_log
             )
             self._udp_server.serve_forever_in_thread()
             logger.info("UDP gateway listening on %s:%d", self.config.udp.host, self.config.udp.port)

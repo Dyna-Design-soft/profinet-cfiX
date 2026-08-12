@@ -4,6 +4,7 @@ import pytest
 
 from cfix_api.cifx.backend import MockCifXBackend
 from cfix_api.gateway.protocol import Command, Request, Status, decode_response, encode_request
+from cfix_api.gateway.traffic_log import TrafficLog
 from cfix_api.gateway.udp_server import UdpGatewayServer
 
 
@@ -61,3 +62,29 @@ def test_unknown_command_returns_error_status(udp_gateway):
         data, _ = sock.recvfrom(65536)
         resp = decode_response(data)
         assert resp.status == Status.UNKNOWN_COMMAND
+
+
+def test_traffic_log_records_request_and_response():
+    backend = MockCifXBackend()
+    backend.open()
+    traffic_log = TrafficLog()
+    server = UdpGatewayServer("127.0.0.1", 0, backend, traffic_log)
+    server.serve_forever_in_thread()
+    try:
+        addr = server.server_address
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(2)
+            _send_request(
+                sock, addr, Request(command=Command.WRITE_OUTPUT, area=0, offset=0, length=2, data=b"\xaa\xbb")
+            )
+
+        events = traffic_log.snapshot()
+        assert len(events) == 1
+        event = events[0]
+        assert event.transport == "UDP"
+        assert "WRITE_OUTPUT" in event.request_summary
+        assert "status=OK" in event.response_summary
+    finally:
+        server.shutdown()
+        server.server_close()
+        backend.close()

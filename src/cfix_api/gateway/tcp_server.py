@@ -12,9 +12,11 @@ import socket
 import socketserver
 import struct
 import threading
+from typing import Optional
 
 from ..cifx.backend import CifXBackend
 from .dispatch import handle_frame
+from .traffic_log import TrafficLog
 
 logger = logging.getLogger("cfix_api.gateway.tcp")
 
@@ -62,6 +64,8 @@ class _Handler(socketserver.BaseRequestHandler):
                 frame = _recv_exact(self.request, length)
                 response = handle_frame(backend, frame)
                 self.request.sendall(_LENGTH_PREFIX.pack(len(response)) + response)
+                if server.traffic_log is not None:
+                    server.traffic_log.record("TCP", f"{peer[0]}:{peer[1]}", frame, response)
         except ConnectionError:
             pass
         except OSError as exc:
@@ -75,8 +79,9 @@ class TcpGatewayServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, host: str, port: int, backend: CifXBackend):
+    def __init__(self, host: str, port: int, backend: CifXBackend, traffic_log: Optional[TrafficLog] = None):
         self.backend = backend
+        self.traffic_log = traffic_log
         self._connection_count = 0
         self._connection_lock = threading.Lock()
         super().__init__((host, port), _Handler)

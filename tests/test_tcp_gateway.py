@@ -7,6 +7,7 @@ import pytest
 from cfix_api.cifx.backend import MockCifXBackend
 from cfix_api.gateway.protocol import Command, Request, Status, decode_response, encode_request
 from cfix_api.gateway.tcp_server import TcpGatewayServer, _Handler
+from cfix_api.gateway.traffic_log import TrafficLog
 
 LENGTH_PREFIX = struct.Struct(">I")
 
@@ -102,3 +103,29 @@ def test_handler_disables_nagle_on_accepted_socket():
     handler.setup()
 
     assert (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) in handler.request.calls
+
+
+def test_traffic_log_records_request_and_response():
+    backend = MockCifXBackend()
+    backend.open()
+    traffic_log = TrafficLog()
+    server = TcpGatewayServer("127.0.0.1", 0, backend, traffic_log)
+    server.serve_forever_in_thread()
+    try:
+        host, port = server.server_address
+        with socket.create_connection((host, port), timeout=2) as sock:
+            _send_request(
+                sock, Request(command=Command.WRITE_OUTPUT, area=0, offset=0, length=4, data=b"\xde\xad\xbe\xef")
+            )
+
+        events = traffic_log.snapshot()
+        assert len(events) == 1
+        event = events[0]
+        assert event.transport == "TCP"
+        assert event.peer.startswith("127.0.0.1:")
+        assert "WRITE_OUTPUT" in event.request_summary
+        assert "status=OK" in event.response_summary
+    finally:
+        server.shutdown()
+        server.server_close()
+        backend.close()
