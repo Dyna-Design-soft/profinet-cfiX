@@ -25,12 +25,14 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
   (`protocol.py`), request dispatch (`dispatch.py`), transports
   (`tcp_server.py`, `udp_server.py`), config (`config.py`) and CLI
   (`cli.py`).
-- `src/cfix_api/gui/` — an optional PySide6 desktop control panel
-  (`cfix-gateway-gui`) that runs the same `GatewayRunner` in-process:
-  start/stop, edit config, and watch live bus/host state, TCP client
-  count, and the input/output process-data bytes, with a manual write
-  buffer for commissioning. Requires the `gui` extra (`pip install
-  -e ".[gui]"`); everything else in this repo works without it.
+- `src/cfix_api/gui/` — an optional PySide6 desktop app
+  (`cfix-gateway-gui`) that runs the same `GatewayRunner` in-process and
+  auto-starts it on launch; a "Gateway Configuration" dialog (TCP/UDP)
+  and a "DLL Configuration" dialog (board/channel/driver DLL/mock) are
+  the only two settings surfaces, each saving to
+  `~/.cfix_gateway/gui_config.json` and restarting the gateway on OK.
+  Requires the `gui` extra (`pip install -e ".[gui]"`); everything else
+  in this repo works without it.
 - `docs/PROTOCOL.md` — the gateway's binary wire protocol.
 - `docs/LABVIEW_INTEGRATION.md` — how to build a LabVIEW TCP/UDP client
   against it.
@@ -73,12 +75,22 @@ pip install -e ".[gui]"
 python -m cfix_api.gui.app       # or the `cfix-gateway-gui` console script
 ```
 
-Opens a control panel to configure and Start/Stop the gateway (defaults
-to the mock backend, so it runs without hardware), watch bus/host state
-and TCP client count live, and view/write the process-data bytes at a
-chosen offset for commissioning. It runs the gateway in-process — one
-app instead of the `cfix-gateway` CLI, not a separate monitor for an
-already-running one.
+The gateway starts automatically the moment the app opens — there's no
+Start button. It uses whatever was last saved (defaults to the mock
+backend on first run, so it comes up working with no hardware attached),
+persisted to `~/.cfix_gateway/gui_config.json` independent of the CLI's
+`config/*.json` files. The window itself is just:
+
+- **Status** — Running/Stopped, bus/host state, TCP client count, live.
+- **Gateway Configuration…** — TCP/UDP enabled/host/port.
+- **DLL Configuration…** — board name, channel, IO timeout, driver DLL
+  path, and the mock-backend toggle.
+- **Restart Gateway** — manual recovery (e.g. after fixing a cable or a
+  bad DLL path) without closing the app.
+- **Log** — live gateway log output.
+
+Either config dialog saves to disk and restarts the gateway on OK, so
+changes take effect immediately.
 
 ## Wire protocol
 

@@ -20,7 +20,7 @@ def main() -> int:
     package_logger.setLevel(logging.INFO)
 
     window = MainWindow(log_handler)
-    window.resize(900, 820)
+    window.resize(520, 480)
     window.show()
 
     return app.exec()
