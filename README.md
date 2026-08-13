@@ -21,6 +21,13 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
   `xChannelHostState`, `xChannelBusState`, `xChannelWatchdog`,
   `xChannelReset`), plus a `CifXBackend` abstraction with a real
   (`HilscherCifXBackend`) and mock (`MockCifXBackend`) implementation.
+  `HilscherCifXBackend` self-heals a stale channel handle (cifX error
+  `0x800A0004` `CIFX_INVALID_HANDLE`, or `0x800B0034`
+  `CIFX_DRV_NOT_OPENED`) - seen if the app opens the channel before the
+  cifX driver service has fully come up after a PC restart, or if the
+  driver resets independently later - by closing and reopening the
+  channel (at most once every 2s) and retrying the call, instead of
+  failing every read/write until a manual Restart Gateway.
 - `src/cfix_api/gateway/` — the TCP/UDP gateway: wire protocol codec
   (`protocol.py`), request dispatch (`dispatch.py`), transports
   (`tcp_server.py`, `udp_server.py`), a bounded live request/response
