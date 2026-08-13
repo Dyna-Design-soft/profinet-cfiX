@@ -48,7 +48,7 @@ class GatewayRunner:
 
         if self.config.tcp.enabled and self.config.stream.enabled:
             self._tcp_server = StreamGatewayServer(
-                self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream
+                self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream, self.traffic_log
             )
             self._tcp_server.serve_forever_in_thread()
             if self.config.stream.write_framing == "ascii_length_prefix":

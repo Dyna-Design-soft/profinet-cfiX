@@ -70,6 +70,23 @@ class TrafficLog:
         with self._lock:
             self._events.append(event)
 
+    def record_raw(self, transport: str, peer: str, summary: str, data: bytes) -> None:
+        """Like record(), but for streaming mode: no Command/Status protocol
+        to decode, so the caller supplies a plain-text summary directly
+        instead of running it through the framed-protocol decoder (which
+        would misparse a raw frame as garbage command/area/offset fields)."""
+        event = TrafficEvent(
+            timestamp=time.time(),
+            transport=transport,
+            peer=peer,
+            request_summary=summary,
+            response_summary="",
+            request_hex=data.hex(" ").upper(),
+            response_hex="",
+        )
+        with self._lock:
+            self._events.append(event)
+
     def snapshot(self) -> list[TrafficEvent]:
         with self._lock:
             return list(self._events)
