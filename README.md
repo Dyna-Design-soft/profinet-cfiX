@@ -84,7 +84,9 @@ persisted to `~/.cfix_gateway/gui_config.json` independent of the CLI's
 `config/*.json` files. The window itself is just:
 
 - **Status** — Running/Stopped, bus/host state, TCP client count, live.
-- **Gateway Configuration…** — TCP/UDP enabled/host/port.
+- **Gateway Configuration…** — TCP/UDP enabled/host/port, plus a
+  Streaming mode section (`stream.enabled` and its area/offset/length/
+  write-framing/poll-interval settings — see "Wire protocol" below).
 - **DLL Configuration…** — board name, channel, IO timeout, driver DLL
   path, and the mock-backend toggle.
 - **Diagnostics…** — a non-modal window with a live table of recent

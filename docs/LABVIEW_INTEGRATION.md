@@ -20,8 +20,14 @@ don't want to build/parse any header in LabVIEW.
 
 ## Streaming mode (`stream.enabled` — no Command byte, no framing)
 
-Turn this on in the gateway's config file (see
-`config/gateway.mock.stream.json` for a working example):
+**Desktop GUI**: open **Gateway Configuration…**, check **Enabled** in the
+"Streaming mode" section, set Area/offsets/lengths/poll interval and pick
+Write framing (Fixed size / ASCII length prefix), then OK — it saves and
+restarts the gateway immediately, same as any other setting in that
+dialog. No JSON editing needed.
+
+**CLI / config file**: turn it on in the gateway's config JSON directly
+(see `config/gateway.mock.stream.json` for a working example):
 
 ```json
 "stream": {
