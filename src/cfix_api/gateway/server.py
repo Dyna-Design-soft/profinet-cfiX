@@ -47,18 +47,25 @@ class GatewayRunner:
         )
 
         # A PROFINET IO controller card won't actually go active on the bus
-        # until the host explicitly signals it's ready - without this, the
-        # card can sit configured-but-dormant after every gateway start
-        # (most visibly after a PC restart), only kicked into life by
-        # something else asserting host-ready as a side effect (e.g.
-        # SyCon's Connect). Set it ourselves so the gateway alone is
-        # sufficient - don't fail startup if this one call has trouble,
-        # since io_read/io_write's own stale-handle recovery and a later
-        # explicit SET_HOST_STATE command both remain available.
-        try:
-            self.backend.set_host_state(True)
-        except Exception as exc:
-            logger.warning("failed to set host state ready on startup: %s", exc)
+        # after every gateway start (most visibly after a PC restart) until
+        # this exact sequence runs - matches a known-working reference
+        # implementation: unlock the downloaded configuration, signal the
+        # host is ready, then explicitly start the bus. Previously nothing
+        # did any of this automatically, so the card sat
+        # configured-but-dormant until something else (e.g. SyCon
+        # connecting) did it as a side effect. None of these three are
+        # fatal to gateway startup if they fail - io_read/io_write's own
+        # stale-handle recovery and the explicit SET_HOST_STATE protocol
+        # command both remain available as fallbacks.
+        for step, fn in (
+            ("unlock configuration", lambda: self.backend.set_config_lock(False)),
+            ("set host state ready", lambda: self.backend.set_host_state(True)),
+            ("set bus state on", lambda: self.backend.set_bus_state(True)),
+        ):
+            try:
+                fn()
+            except Exception as exc:
+                logger.warning("failed to %s on startup: %s", step, exc)
 
         if self.config.tcp.enabled and self.config.stream.enabled:
             self._tcp_server = StreamGatewayServer(

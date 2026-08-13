@@ -2,7 +2,8 @@
 
 This wraps the public, documented cifX API (cifXUser.h): xDriverOpen,
 xDriverClose, xChannelOpen, xChannelClose, xChannelIORead, xChannelIOWrite,
-xChannelHostState, xChannelBusState, xChannelWatchdog and xChannelReset.
+xChannelHostState, xChannelBusState, xChannelConfigLock, xChannelWatchdog
+and xChannelReset.
 
 On a Windows target with the Hilscher cifX driver installed, the driver
 DLL is loaded by name. Confirmed names: "cifx32dll.dll" is the 32-bit
@@ -167,6 +168,18 @@ class CifXLibrary:
             ct.c_uint32,
         ]
         dll.xChannelBusState.restype = ct.c_uint32
+
+        # Same (handle, cmd, state-out, timeout) shape as xChannelHostState/
+        # xChannelBusState above - confirmed against a working Hilscher
+        # CIFX LabVIEW class library's Config Lock.vi (see errors.py's
+        # CIFX_CONFIG_* for details), not just inferred from the pattern.
+        dll.xChannelConfigLock.argtypes = [
+            HANDLE,
+            ct.c_uint32,
+            ct.POINTER(ct.c_uint32),
+            ct.c_uint32,
+        ]
+        dll.xChannelConfigLock.restype = ct.c_uint32
 
         dll.xChannelWatchdog.argtypes = [
             HANDLE,
