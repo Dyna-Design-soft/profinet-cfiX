@@ -10,11 +10,10 @@ request/response exchange:
   cifX input image at (area, read_offset) and sends them straight back to
   the client, unprompted.
 
-Each successful write is recorded to the shared TrafficLog (visible in the
-desktop app's Diagnostics window) as a raw entry - poll reads are not, since
-at a typical 10ms interval they'd flood the log/table with little value; the
-Diagnostics window's "Card Process Data" panel already shows live input/
-output image content independent of this log.
+The server tracks cumulative bytes written/read (`bytes_written`/
+`bytes_read`) across all connections, so the desktop app can sample them
+periodically and show a live KB/s throughput figure instead of logging
+every individual write/poll event.
 
 `write_framing` controls how the reader finds a write frame's boundary:
 
@@ -34,11 +33,9 @@ import logging
 import socket
 import socketserver
 import threading
-from typing import Optional
 
 from ..cifx.backend import CifXBackend
 from .config import StreamConfig
-from .traffic_log import TrafficLog
 
 logger = logging.getLogger("cfix_api.gateway.stream")
 
@@ -116,6 +113,7 @@ class _Handler(socketserver.BaseRequestHandler):
                 try:
                     data = backend.io_read(cfg.area, cfg.read_offset, cfg.read_length)
                     self.request.sendall(data)
+                    server._add_bytes_read(len(data))
                 except (OSError, ConnectionError):
                     stop.set()
                     return
@@ -143,10 +141,7 @@ class _Handler(socketserver.BaseRequestHandler):
                 except Exception:
                     logger.exception("stream write failed for %s", peer)
                 else:
-                    if server.traffic_log is not None:
-                        server.traffic_log.record_raw(
-                            "TCP-STREAM", f"{peer[0]}:{peer[1]}", f"wrote {len(data)} bytes", data
-                        )
+                    server._add_bytes_written(len(data))
         except OSError as exc:
             logger.info("stream client %s connection error: %s", peer, exc)
         finally:
@@ -160,18 +155,12 @@ class StreamGatewayServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        backend: CifXBackend,
-        stream_config: StreamConfig,
-        traffic_log: Optional[TrafficLog] = None,
-    ):
+    def __init__(self, host: str, port: int, backend: CifXBackend, stream_config: StreamConfig):
         self.backend = backend
         self.stream_config = stream_config
-        self.traffic_log = traffic_log
         self._connection_count = 0
+        self._bytes_written = 0
+        self._bytes_read = 0
         self._connection_lock = threading.Lock()
         super().__init__((host, port), _Handler)
 
@@ -179,10 +168,32 @@ class StreamGatewayServer(socketserver.ThreadingTCPServer):
         with self._connection_lock:
             self._connection_count += delta
 
+    def _add_bytes_written(self, n: int) -> None:
+        with self._connection_lock:
+            self._bytes_written += n
+
+    def _add_bytes_read(self, n: int) -> None:
+        with self._connection_lock:
+            self._bytes_read += n
+
     @property
     def connection_count(self) -> int:
         with self._connection_lock:
             return self._connection_count
+
+    @property
+    def bytes_written(self) -> int:
+        """Cumulative bytes written to the cifX output image across all
+        connections since this server started."""
+        with self._connection_lock:
+            return self._bytes_written
+
+    @property
+    def bytes_read(self) -> int:
+        """Cumulative bytes read from the cifX input image and sent to
+        clients across all connections since this server started."""
+        with self._connection_lock:
+            return self._bytes_read
 
     def serve_forever_in_thread(self) -> threading.Thread:
         thread = threading.Thread(target=self.serve_forever, name="cfix-stream-gateway", daemon=True)

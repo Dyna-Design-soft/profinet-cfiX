@@ -108,6 +108,48 @@ then connect with a short Python script using plain
 working example against the mock backend) and confirm your frame bytes
 land in the output image and get echoed back on the read loop.
 
+### Auto-reconnect
+
+TCP connections don't stay up forever — a gateway restart, a cable pull,
+or the gateway closing a desynced connection (bad start byte / bad
+`len"..."` prefix) will all drop it. LabVIEW should treat that as
+recoverable, not fatal: wrap the connect-and-run logic in an outer loop
+that reopens the connection on any TCP error instead of stopping.
+
+VI pattern:
+
+1. Outer **While Loop** around everything below, with a short **Wait**
+   (e.g. 1000 ms) at the end of each iteration when reconnecting.
+2. Inside: **TCP Open Connection**. Wire its error output into a **Case
+   Structure** — if it errored, skip straight to the Wait/retry (don't
+   attempt reads/writes on a refnum that failed to open).
+3. On successful open, run your normal write/read loops (from "Streaming
+   mode" above) inside an inner loop that keeps going until *either* loop
+   produces an error.
+4. On any TCP error from a read or write, stop the inner loop, **TCP
+   Close Connection** (ignore further errors closing an already-broken
+   refnum), and let the outer loop's Wait/retry take over — back to step
+   2, opening a fresh connection.
+5. Don't reset your setpoint/output data when this happens — just resume
+   sending it once reconnected, the same way a network blip in any
+   control loop shouldn't reset the last commanded value.
+
+`examples/stream_client_example.py` is a working, tested reference for
+exactly this pattern (Python, but the structure maps directly to the VI
+outline above — see `run_connected()` for the "inside a connection" part
+and `main()`'s `while True` / `except (ConnectionError, OSError)` for the
+outer retry loop). To see it recover for real: start the mock gateway,
+run the client, then stop and restart the gateway process while it's
+running — the client logs `connection lost (...); reconnecting in 1.0s`
+and resumes automatically once the gateway is back, with no restart of
+the client itself needed.
+
+```bash
+python -m cfix_api.gateway.cli --config config/gateway.mock.stream.json &
+python examples/stream_client_example.py --port 9800
+# now Ctrl+C the gateway and start it again - watch the client recover
+```
+
 ## Framed protocol — TCP client (VI outline)
 
 1. **TCP Open Connection** to the gateway host/port (default `9800`).

@@ -9,6 +9,8 @@ that swap in a new GatewayRunner underneath it.
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -40,6 +42,7 @@ class DiagnosticsWindow(QDialog):
         self.setMinimumSize(760, 560)
 
         self._build_ui()
+        self._last_sample: tuple[float, int, int] | None = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_INTERVAL_MS)
@@ -109,6 +112,13 @@ class DiagnosticsWindow(QDialog):
         io_group.setLayout(io_layout)
         layout.addWidget(io_group)
 
+        throughput_group = QGroupBox("Streaming Throughput")
+        throughput_layout = QVBoxLayout()
+        self.throughput_label = QLabel("-")
+        throughput_layout.addWidget(self.throughput_label)
+        throughput_group.setLayout(throughput_layout)
+        layout.addWidget(throughput_group)
+
     def _clear_traffic_log(self) -> None:
         runner = self.main_window.runner
         if runner is not None:
@@ -121,6 +131,8 @@ class DiagnosticsWindow(QDialog):
             self.traffic_status_label.setText("Gateway not running")
             self.input_hex_view.setText("-")
             self.output_hex_view.setText("-")
+            self.throughput_label.setText("-")
+            self._last_sample = None
             return
 
         all_events = runner.traffic_log.snapshot()
@@ -149,6 +161,26 @@ class DiagnosticsWindow(QDialog):
             self.output_hex_view.setText(_bytes_to_hex(output_data))
         except Exception as exc:
             self.output_hex_view.setText(f"<error: {exc}>")
+
+        self._refresh_throughput(runner)
+
+    def _refresh_throughput(self, runner) -> None:
+        counters = runner.stream_byte_counters
+        if counters is None:
+            self.throughput_label.setText("n/a (streaming mode not active)")
+            self._last_sample = None
+            return
+
+        bytes_written, bytes_read = counters
+        now = time.monotonic()
+        if self._last_sample is not None:
+            last_t, last_written, last_read = self._last_sample
+            dt = now - last_t
+            if dt > 0 and bytes_written >= last_written and bytes_read >= last_read:
+                write_kbps = (bytes_written - last_written) / 1024.0 / dt
+                read_kbps = (bytes_read - last_read) / 1024.0 / dt
+                self.throughput_label.setText(f"Write: {write_kbps:.2f} KB/s    Read: {read_kbps:.2f} KB/s")
+        self._last_sample = (now, bytes_written, bytes_read)
 
     def closeEvent(self, event) -> None:
         self._timer.stop()
