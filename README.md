@@ -77,6 +77,9 @@ pip install -e ".[gui]"
 python -m cfix_api.gui.app       # or the `cfix-gateway-gui` console script
 ```
 
+To build a standalone Windows `.exe` instead of running from source, see
+`packaging/README.md`.
+
 The gateway starts automatically the moment the app opens — there's no
 Start button. It uses whatever was last saved (defaults to the mock
 backend on first run, so it comes up working with no hardware attached),
