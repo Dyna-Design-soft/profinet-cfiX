@@ -1,8 +1,14 @@
-"""TCP gateway server: length-prefixed framing over a persistent connection.
+"""TCP gateway server: start/length/end-delimited framing over a persistent
+connection.
 
-Each request/response frame (see docs/PROTOCOL.md) is prefixed on the wire
-with a 4-byte big-endian length. One thread per client connection; requests
-on a connection are handled and answered strictly in order.
+Each request/response frame (see docs/PROTOCOL.md) is wrapped on the wire as
+`[START byte][4-byte big-endian length][frame][END byte]`, where `length`
+counts only the frame bytes (not the start byte, length field, or end byte).
+The length field is authoritative for how many frame bytes to read; START and
+END are sync/integrity markers checked at fixed offsets, not scanned for, so
+arbitrary binary payload bytes never get misread as a delimiter. One thread
+per client connection; requests on a connection are handled and answered
+strictly in order.
 """
 
 from __future__ import annotations
@@ -20,6 +26,8 @@ from .traffic_log import TrafficLog
 
 logger = logging.getLogger("cfix_api.gateway.tcp")
 
+START_BYTE = 0x82
+END_BYTE = 0x83
 _LENGTH_PREFIX = struct.Struct(">I")
 MAX_FRAME_SIZE = 64 * 1024
 
@@ -54,16 +62,32 @@ class _Handler(socketserver.BaseRequestHandler):
         try:
             while True:
                 try:
-                    length_bytes = _recv_exact(self.request, _LENGTH_PREFIX.size)
+                    start = _recv_exact(self.request, 1)
                 except ConnectionError:
                     break
+                if start[0] != START_BYTE:
+                    logger.warning(
+                        "TCP client %s sent bad start byte (0x%02x, expected 0x%02x); closing",
+                        peer, start[0], START_BYTE,
+                    )
+                    break
+                length_bytes = _recv_exact(self.request, _LENGTH_PREFIX.size)
                 (length,) = _LENGTH_PREFIX.unpack(length_bytes)
                 if length > MAX_FRAME_SIZE:
                     logger.warning("TCP client %s sent oversized frame (%d bytes); closing", peer, length)
                     break
                 frame = _recv_exact(self.request, length)
+                end = _recv_exact(self.request, 1)
+                if end[0] != END_BYTE:
+                    logger.warning(
+                        "TCP client %s sent bad end byte (0x%02x, expected 0x%02x); closing",
+                        peer, end[0], END_BYTE,
+                    )
+                    break
                 response = handle_frame(backend, frame)
-                self.request.sendall(_LENGTH_PREFIX.pack(len(response)) + response)
+                self.request.sendall(
+                    bytes([START_BYTE]) + _LENGTH_PREFIX.pack(len(response)) + response + bytes([END_BYTE])
+                )
                 if server.traffic_log is not None:
                     server.traffic_log.record("TCP", f"{peer[0]}:{peer[1]}", frame, response)
         except ConnectionError:

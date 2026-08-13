@@ -25,6 +25,7 @@ import time
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "src"))
 
 from cfix_api.gateway.protocol import Command, Request, decode_response, encode_request  # noqa: E402
+from cfix_api.gateway.tcp_server import END_BYTE, START_BYTE  # noqa: E402
 
 LENGTH_PREFIX = struct.Struct(">I")
 
@@ -42,9 +43,16 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 
 
 def _round_trip_tcp(sock: socket.socket, frame: bytes) -> bytes:
-    sock.sendall(LENGTH_PREFIX.pack(len(frame)) + frame)
+    sock.sendall(bytes([START_BYTE]) + LENGTH_PREFIX.pack(len(frame)) + frame + bytes([END_BYTE]))
+    start = _recv_exact(sock, 1)
+    if start[0] != START_BYTE:
+        raise ConnectionError(f"bad start byte 0x{start[0]:02x}")
     (length,) = LENGTH_PREFIX.unpack(_recv_exact(sock, 4))
-    return _recv_exact(sock, length)
+    response = _recv_exact(sock, length)
+    end = _recv_exact(sock, 1)
+    if end[0] != END_BYTE:
+        raise ConnectionError(f"bad end byte 0x{end[0]:02x}")
+    return response
 
 
 def _round_trip_udp(sock: socket.socket, addr, frame: bytes) -> bytes:

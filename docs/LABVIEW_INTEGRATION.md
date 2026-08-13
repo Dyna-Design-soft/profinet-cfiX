@@ -23,16 +23,25 @@ primitives.
    - Easiest built with **Flatten To String** on a cluster of
      `U8, U8, U16, U16` (+ a byte array for `Data`), with "network byte
      order" left checked (default).
-3. Prefix the frame with its length as a **U32 big-endian** (4 bytes) —
-   also via Flatten To String — and concatenate: `[length][frame]`.
-4. **TCP Write** the concatenated bytes.
-5. **TCP Read** exactly 4 bytes, **Unflatten From String** as U32 to get
-   the response length, then **TCP Read** exactly that many more bytes.
-6. **Unflatten From String** the response as a cluster of
+3. Wrap the frame with a fixed **START byte** `0x82`, its length as a
+   **U32 big-endian** (4 bytes), and a fixed **END byte** `0x83`, then
+   concatenate: `[0x82][length][frame][0x83]`. Build `0x82`/`0x83` as
+   plain U8 constants — don't try to detect them elsewhere in the byte
+   stream, they're only meaningful at these fixed positions.
+4. **TCP Write** the concatenated bytes in one write.
+5. **TCP Read** exactly 1 byte and check it's `0x82`, then **TCP Read**
+   exactly 4 bytes and **Unflatten From String** as U32 to get the
+   response length, then **TCP Read** exactly that many more bytes for
+   the response frame, then **TCP Read** exactly 1 more byte and check
+   it's `0x83`.
+6. **Unflatten From String** the response frame as a cluster of
    `U8 (status), U8 (command), U16 (data length)`, then take the
    remaining bytes as `Data`.
 7. Check `status == 0`; non-zero means the gateway rejected the frame or
    the CIFX driver call failed (see `docs/PROTOCOL.md` for status codes).
+   Separately, if the START or END byte you read back doesn't match,
+   the stream is desynced and the gateway will have already closed the
+   connection — don't retry reads on the same connection, reopen it.
 8. **TCP Close Connection** when done, or keep it open and repeat steps
    2–7 for each cyclic poll (recommended for a periodic drive-control
    loop — avoid reopening the connection every scan).

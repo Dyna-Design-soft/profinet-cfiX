@@ -60,22 +60,37 @@ coming *from* the drive). `WRITE_OUTPUT`/`READ_OUTPUT` write/read the
 ## Transport framing
 
 - **TCP**: the connection is a byte stream, so each frame above is
-  prefixed with a 4-byte big-endian length (`u32`), counting only the
-  bytes of the frame that follows (not the 4 length bytes themselves).
-  A client sends `[u32 length][frame]` and reads the response the same
-  way. Multiple requests may be pipelined on one connection; each is
-  answered in order.
-- **UDP**: each datagram *is* one frame, with no length prefix — the
-  UDP datagram boundary provides the framing. One request datagram gets
-  exactly one response datagram from the same server socket. UDP is
-  unordered/unreliable, so a client should apply its own timeout/retry
-  if a response doesn't arrive.
+  wrapped as `[START byte][u32 length][frame][END byte]`:
+  - `START` = `0x82`, a fixed sync byte.
+  - `length` (4 bytes, big-endian) counts only the bytes of `frame` that
+    follows — not the START byte, the length field itself, or the END
+    byte.
+  - `END` = `0x83`, a fixed sync byte, immediately after the `length`
+    bytes of frame data.
+  - The `length` field is authoritative for how many frame bytes to
+    read — the receiver never scans the stream for START/END. It reads
+    1 byte (START), 4 bytes (length), `length` bytes (frame), then 1
+    more byte (END) and checks it. This means arbitrary binary payload
+    bytes (including bytes that happen to equal `0x82`/`0x83`) never get
+    misread as a delimiter.
+  - A client sends `[0x82][u32 length][frame][0x83]` and reads the
+    response the same way. If START or END don't match at their fixed
+    offset, the gateway logs a warning and closes the connection — the
+    stream is desynced and cannot be recovered without reconnecting.
+  - Multiple requests may be pipelined on one connection; each is
+    answered in order.
+- **UDP**: each datagram *is* one frame, with no start/length/end
+  wrapper — the UDP datagram boundary provides the framing. One request
+  datagram gets exactly one response datagram from the same server
+  socket. UDP is unordered/unreliable, so a client should apply its own
+  timeout/retry if a response doesn't arrive.
 
 ## Example: read 16 bytes of drive input data at offset 0 (TCP)
 
 Request frame: `01 00 00 00 00 10` (6 bytes)
-Sent on the wire as: `00 00 00 06 01 00 00 00 00 10` (4-byte length + frame)
+Sent on the wire as: `82 00 00 00 06 01 00 00 00 00 10 83`
+(START + 4-byte length + frame + END)
 
 Response frame (success, 16 bytes of data):
 `00 01 00 10 <16 bytes>` (4 + 16 = 20 bytes)
-Sent on the wire as: `00 00 00 14 00 01 00 10 <16 bytes>`
+Sent on the wire as: `82 00 00 00 14 00 01 00 10 <16 bytes> 83`
