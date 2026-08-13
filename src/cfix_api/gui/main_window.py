@@ -3,11 +3,12 @@
 Starts the gateway automatically on launch, using the last-saved
 configuration (or mock-backend defaults on first run) - there is no
 manual Start button. Two buttons cover configuration: "Gateway
-Configuration" (TCP/UDP) and "DLL Configuration" (cifX board/channel/
-driver DLL/mock toggle). Either dialog saves and restarts the gateway
-automatically on Apply, so changes take effect immediately. A "Restart
-Gateway" button covers manual recovery (e.g. after fixing a cable or a
-misconfigured DLL) without closing the app.
+Configuration" (TCP/UDP, plus the opt-in streaming mode) and "DLL
+Configuration" (cifX board/channel/driver DLL/mock toggle). Either dialog
+saves and restarts the gateway automatically on Apply, so changes take
+effect immediately. A "Restart Gateway" button covers manual recovery
+(e.g. after fixing a cable or a misconfigured DLL) without closing the
+app.
 """
 
 from __future__ import annotations

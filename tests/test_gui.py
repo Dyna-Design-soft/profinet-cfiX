@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from cfix_api.gateway.config import CifxConfig, GatewayConfig, TcpConfig, UdpConfig  # noqa: E402
 from cfix_api.gateway.protocol import Command, Request, decode_response, encode_request  # noqa: E402
+from cfix_api.gateway.tcp_server import END_BYTE, START_BYTE  # noqa: E402
 from cfix_api.gui.diagnostics_window import DiagnosticsWindow  # noqa: E402
 from cfix_api.gui.dll_config_dialog import DllConfigDialog  # noqa: E402
 from cfix_api.gui.gateway_config_dialog import GatewayConfigDialog  # noqa: E402
@@ -41,6 +42,21 @@ def window(qapp, tmp_path):
     yield win
     if win.runner is not None:
         win._stop_gateway()
+
+
+def _send_framed_request(sock: socket.socket, req: Request):
+    """Sends one request over the framed TCP protocol (start byte + u32
+    length + frame + end byte, see tcp_server.py) and returns the decoded
+    response."""
+    frame = encode_request(req)
+    sock.sendall(bytes([START_BYTE]) + struct.pack(">I", len(frame)) + frame + bytes([END_BYTE]))
+    start = sock.recv(1)
+    assert start == bytes([START_BYTE])
+    (length,) = struct.unpack(">I", sock.recv(4))
+    response = sock.recv(length)
+    end = sock.recv(1)
+    assert end == bytes([END_BYTE])
+    return decode_response(response)
 
 
 def test_first_run_defaults_to_mock_backend(tmp_path):
@@ -96,10 +112,7 @@ def test_restart_applies_new_config(window):
 
     host, port = window.runner._tcp_server.server_address
     with socket.create_connection((host, port), timeout=2) as sock:
-        frame = encode_request(Request(command=Command.GET_STATUS, area=0, offset=0, length=0))
-        sock.sendall(struct.pack(">I", len(frame)) + frame)
-        (length,) = struct.unpack(">I", sock.recv(4))
-        response = decode_response(sock.recv(length))
+        response = _send_framed_request(sock, Request(command=Command.GET_STATUS, area=0, offset=0, length=0))
     assert response.status == 0
     assert port == 19856
 
@@ -124,6 +137,42 @@ def test_gateway_config_dialog_apply_to_changes_ports(qapp):
     assert updated.udp.enabled is False
     # apply_to must not mutate the original config in place.
     assert config.tcp.port != 19860
+
+
+def test_gateway_config_dialog_apply_to_changes_stream_settings(qapp):
+    from cfix_api.gui.gateway_config_dialog import _WRITE_FRAMING_ASCII
+
+    config = GatewayConfig()
+    dialog = GatewayConfigDialog(config)
+    dialog.stream_enabled.setChecked(True)
+    dialog.stream_area.setValue(1)
+    dialog.stream_write_framing.setCurrentText(_WRITE_FRAMING_ASCII)
+    dialog.stream_write_offset.setValue(10)
+    dialog.stream_read_offset.setValue(20)
+    dialog.stream_read_length.setValue(103)
+    dialog.stream_poll_interval_ms.setValue(5)
+
+    updated = dialog.apply_to(config)
+    assert updated.stream.enabled is True
+    assert updated.stream.area == 1
+    assert updated.stream.write_framing == "ascii_length_prefix"
+    assert updated.stream.write_offset == 10
+    assert updated.stream.read_offset == 20
+    assert updated.stream.read_length == 103
+    assert updated.stream.poll_interval_ms == 5
+    # apply_to must not mutate the original config in place.
+    assert config.stream.enabled is False
+
+
+def test_gateway_config_dialog_write_length_disabled_in_ascii_mode(qapp):
+    from cfix_api.gui.gateway_config_dialog import _WRITE_FRAMING_ASCII, _WRITE_FRAMING_FIXED
+
+    dialog = GatewayConfigDialog(GatewayConfig())
+    assert dialog.stream_write_length.isEnabled() is True
+    dialog.stream_write_framing.setCurrentText(_WRITE_FRAMING_ASCII)
+    assert dialog.stream_write_length.isEnabled() is False
+    dialog.stream_write_framing.setCurrentText(_WRITE_FRAMING_FIXED)
+    assert dialog.stream_write_length.isEnabled() is True
 
 
 def test_dll_config_dialog_apply_to_changes_board(qapp):
@@ -210,12 +259,9 @@ def test_diagnostics_window_shows_traffic_and_io_after_request(window):
 
     host, port = window.runner._tcp_server.server_address
     with socket.create_connection((host, port), timeout=2) as sock:
-        frame = encode_request(
-            Request(command=Command.WRITE_OUTPUT, area=0, offset=0, length=4, data=b"\xde\xad\xbe\xef")
+        _send_framed_request(
+            sock, Request(command=Command.WRITE_OUTPUT, area=0, offset=0, length=4, data=b"\xde\xad\xbe\xef")
         )
-        sock.sendall(struct.pack(">I", len(frame)) + frame)
-        (length,) = struct.unpack(">I", sock.recv(4))
-        decode_response(sock.recv(length))
 
     diag = DiagnosticsWindow(window)
     try:
