@@ -56,6 +56,16 @@ then run the same `pyinstaller` command. Output:
 `dist\CFIX Gateway\CFIX Gateway.exe`, with its supporting DLLs/resources
 in the same folder — distribute the whole folder, not just the `.exe`.
 
+## Where the built app stores its settings
+
+The `.exe` writes its gateway config and login password hash to a
+`.cfix_gateway` folder created next to itself (e.g.
+`dist\.cfix_gateway\` alongside `dist\CFIX Gateway.exe` for the one-file
+build, or inside `dist\CFIX Gateway\` for the folder build) - not your
+Windows user profile. Moving or copying the folder containing the `.exe`
+takes its settings with it. See the main `README.md`'s "Where settings
+are stored" section for details.
+
 ## What's *not* bundled
 
 The Hilscher cifX driver DLL (`cifX32DLL.dll`/`cifX64DLL.dll`) stays

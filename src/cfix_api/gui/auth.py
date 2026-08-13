@@ -17,7 +17,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_AUTH_PATH = Path.home() / ".cfix_gateway" / "auth.json"
+from .app_dirs import default_data_dir
+
+DEFAULT_AUTH_PATH = default_data_dir() / "auth.json"
 DEFAULT_PASSWORD = "admin"
 _PBKDF2_ITERATIONS = 200_000
 
