@@ -57,7 +57,8 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
 
 ```bash
 python -m venv .venv && . .venv/bin/activate   # or .venv\Scripts\activate on Windows
-pip install -e ".[dev]"
+pip install -r requirements.txt                 # gateway + GUI + tests
+# or, for just the gateway (no GUI, no test deps): pip install -e .
 pytest                                          # runs against the mock backend
 
 # Try the gateway without hardware:

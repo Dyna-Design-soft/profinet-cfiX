@@ -1,0 +1,10 @@
+# Installs this package (editable) plus everything needed to run the
+# gateway, the desktop GUI, and the test suite.
+#
+# Equivalent to: pip install -e ".[dev,gui]"
+#
+# Versions themselves are pinned in pyproject.toml, not duplicated here -
+# that stays the single source of truth. If you only need the gateway
+# (no GUI, no tests), `pip install -e .` alone is enough; the core
+# package has zero required dependencies.
+-e .[dev,gui]
