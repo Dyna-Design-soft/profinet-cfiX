@@ -12,8 +12,9 @@ import json
 from pathlib import Path
 
 from ..gateway.config import CifxConfig, GatewayConfig
+from .app_dirs import default_data_dir
 
-DEFAULT_SETTINGS_PATH = Path.home() / ".cfix_gateway" / "gui_config.json"
+DEFAULT_SETTINGS_PATH = default_data_dir() / "gui_config.json"
 
 
 def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> GatewayConfig:
