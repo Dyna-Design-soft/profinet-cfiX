@@ -46,6 +46,20 @@ class GatewayRunner:
             getattr(self.backend, "channel", "-"),
         )
 
+        # A PROFINET IO controller card won't actually go active on the bus
+        # until the host explicitly signals it's ready - without this, the
+        # card can sit configured-but-dormant after every gateway start
+        # (most visibly after a PC restart), only kicked into life by
+        # something else asserting host-ready as a side effect (e.g.
+        # SyCon's Connect). Set it ourselves so the gateway alone is
+        # sufficient - don't fail startup if this one call has trouble,
+        # since io_read/io_write's own stale-handle recovery and a later
+        # explicit SET_HOST_STATE command both remain available.
+        try:
+            self.backend.set_host_state(True)
+        except Exception as exc:
+            logger.warning("failed to set host state ready on startup: %s", exc)
+
         if self.config.tcp.enabled and self.config.stream.enabled:
             self._tcp_server = StreamGatewayServer(
                 self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream
