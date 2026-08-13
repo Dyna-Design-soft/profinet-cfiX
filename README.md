@@ -32,7 +32,14 @@ Drive (PROFINET) <-> CIFX PCI card <-> cifX driver (Windows)
   (`protocol.py`), request dispatch (`dispatch.py`), transports
   (`tcp_server.py`, `udp_server.py`), a bounded live request/response
   recorder for the GUI's Diagnostics window (`traffic_log.py`), config
-  (`config.py`) and CLI (`cli.py`).
+  (`config.py`) and CLI (`cli.py`). `GatewayRunner.start()`
+  (`server.py`) sets the card's host state to READY automatically right
+  after opening the backend - a PROFINET IO controller card stays
+  configured-but-dormant on the bus until the host signals ready, so
+  without this the gateway alone wasn't enough to bring the card up
+  after a PC restart (only opening SyCon and connecting to it was,
+  since that also asserts host-ready as a side effect). The `SET_HOST_STATE`
+  protocol command still exists for manual override if needed.
 - `src/cfix_api/gui/` — an optional PySide6 desktop app
   (`cfix-gateway-gui`) that runs the same `GatewayRunner` in-process and
   auto-starts it on launch; a "Gateway Configuration" dialog (TCP/UDP)

@@ -319,7 +319,10 @@ def test_poll_updates_status_labels(window):
     window._start_gateway()
     window._poll()
     assert window.bus_state_label.text() == "ON"
-    assert window.host_state_label.text() == "NOT READY"
+    # host state is set READY automatically by GatewayRunner.start() - see
+    # test_gateway_runner.py for why (a PROFINET IO controller won't go
+    # active on the bus until the host signals ready).
+    assert window.host_state_label.text() == "READY"
     assert window.tcp_clients_label.text() == "0"
 
 
