@@ -9,6 +9,11 @@ saves and restarts the gateway automatically on Apply, so changes take
 effect immediately. A "Restart Gateway" button covers manual recovery
 (e.g. after fixing a cable or a misconfigured DLL) without closing the
 app.
+
+Those three actions - Gateway Configuration, DLL Configuration, Restart
+Gateway - are gated behind a Login button (see auth.py): disabled until a
+correct password is entered, re-locked on every app launch (no "remember
+me"). Diagnostics is read-only and never gated.
 """
 
 from __future__ import annotations
@@ -23,7 +28,9 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -33,6 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..gateway.server import GatewayRunner
+from . import auth
 from .diagnostics_window import DiagnosticsWindow
 from .dll_config_dialog import DllConfigDialog
 from .gateway_config_dialog import GatewayConfigDialog
@@ -50,11 +58,15 @@ class MainWindow(QMainWindow):
         log_handler: QtLogHandler,
         autostart: bool = True,
         settings_path: Path = DEFAULT_SETTINGS_PATH,
+        auth_path: Path = auth.DEFAULT_AUTH_PATH,
     ):
         super().__init__()
         self.setWindowTitle("CFIX Gateway")
 
         self._settings_path = settings_path
+        self._auth_path = auth_path
+        auth.ensure_password_set(self._auth_path)
+        self._authenticated = False
         self.config = load_settings(settings_path)
         self.runner: GatewayRunner | None = None
         self._diagnostics_window: DiagnosticsWindow | None = None
@@ -90,6 +102,20 @@ class MainWindow(QMainWindow):
         status_group.setLayout(status_form)
         layout.addWidget(status_group)
 
+        login_row = QHBoxLayout()
+        self.login_status_label = QLabel("Locked")
+        self.login_status_label.setStyleSheet("color: red;")
+        self.change_password_btn = QPushButton("Change Password…")
+        self.change_password_btn.setEnabled(False)
+        self.change_password_btn.clicked.connect(self._change_password)
+        self.login_btn = QPushButton("Login…")
+        self.login_btn.clicked.connect(self._toggle_login)
+        login_row.addWidget(self.login_status_label)
+        login_row.addStretch()
+        login_row.addWidget(self.change_password_btn)
+        login_row.addWidget(self.login_btn)
+        layout.addLayout(login_row)
+
         button_row = QHBoxLayout()
         self.gateway_config_btn = QPushButton("Gateway Configuration…")
         self.dll_config_btn = QPushButton("DLL Configuration…")
@@ -99,6 +125,10 @@ class MainWindow(QMainWindow):
         self.dll_config_btn.clicked.connect(self._open_dll_config)
         self.diagnostics_btn.clicked.connect(self._open_diagnostics)
         self.restart_btn.clicked.connect(self._restart_gateway)
+        # Gated behind Login - Diagnostics is read-only and never gated.
+        self.gateway_config_btn.setEnabled(False)
+        self.dll_config_btn.setEnabled(False)
+        self.restart_btn.setEnabled(False)
         button_row.addWidget(self.gateway_config_btn)
         button_row.addWidget(self.dll_config_btn)
         button_row.addWidget(self.diagnostics_btn)
@@ -117,6 +147,57 @@ class MainWindow(QMainWindow):
         layout.addWidget(log_group, stretch=1)
 
         self.setCentralWidget(central)
+
+    # ------------------------------------------------------------------
+    # Login gate
+    # ------------------------------------------------------------------
+    def _toggle_login(self) -> None:
+        if self._authenticated:
+            self._set_authenticated(False)
+            logger.info("logged out")
+            return
+
+        password, ok = QInputDialog.getText(self, "Login", "Password:", QLineEdit.EchoMode.Password)
+        if not ok:
+            return
+        if auth.verify_password(password, self._auth_path):
+            self._set_authenticated(True)
+            logger.info("logged in")
+        else:
+            QMessageBox.warning(self, "Login failed", "Incorrect password.")
+
+    def _set_authenticated(self, authenticated: bool) -> None:
+        self._authenticated = authenticated
+        self.gateway_config_btn.setEnabled(authenticated)
+        self.dll_config_btn.setEnabled(authenticated)
+        self.restart_btn.setEnabled(authenticated)
+        self.change_password_btn.setEnabled(authenticated)
+        if authenticated:
+            self.login_btn.setText("Logout")
+            self.login_status_label.setText("Unlocked")
+            self.login_status_label.setStyleSheet("color: green;")
+        else:
+            self.login_btn.setText("Login…")
+            self.login_status_label.setText("Locked")
+            self.login_status_label.setStyleSheet("color: red;")
+
+    def _change_password(self) -> None:
+        new_password, ok = QInputDialog.getText(
+            self, "Change Password", "New password:", QLineEdit.EchoMode.Password
+        )
+        if not ok or not new_password:
+            return
+        confirm, ok = QInputDialog.getText(
+            self, "Change Password", "Confirm new password:", QLineEdit.EchoMode.Password
+        )
+        if not ok:
+            return
+        if confirm != new_password:
+            QMessageBox.warning(self, "Change Password", "Passwords did not match.")
+            return
+        auth.set_password(new_password, self._auth_path)
+        logger.info("password changed")
+        QMessageBox.information(self, "Change Password", "Password changed.")
 
     # ------------------------------------------------------------------
     # Config dialogs

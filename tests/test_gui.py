@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from cfix_api.gateway.config import CifxConfig, GatewayConfig, StreamConfig, TcpConfig, UdpConfig  # noqa: E402
 from cfix_api.gateway.protocol import Command, Request, decode_response, encode_request  # noqa: E402
 from cfix_api.gateway.tcp_server import END_BYTE, START_BYTE  # noqa: E402
+from cfix_api.gui import auth  # noqa: E402
 from cfix_api.gui.diagnostics_window import DiagnosticsWindow  # noqa: E402
 from cfix_api.gui.dll_config_dialog import DllConfigDialog  # noqa: E402
 from cfix_api.gui.gateway_config_dialog import GatewayConfigDialog  # noqa: E402
@@ -38,7 +39,8 @@ def qapp():
 @pytest.fixture
 def window(qapp, tmp_path):
     settings_path = tmp_path / "gui_config.json"
-    win = MainWindow(QtLogHandler(), autostart=False, settings_path=settings_path)
+    auth_path = tmp_path / "auth.json"
+    win = MainWindow(QtLogHandler(), autostart=False, settings_path=settings_path, auth_path=auth_path)
     yield win
     if win.runner is not None:
         win._stop_gateway()
@@ -79,7 +81,9 @@ def test_settings_round_trip(tmp_path):
 
 
 def test_autostart_starts_gateway(qapp, tmp_path):
-    win = MainWindow(QtLogHandler(), autostart=True, settings_path=tmp_path / "gui_config.json")
+    win = MainWindow(
+        QtLogHandler(), autostart=True, settings_path=tmp_path / "gui_config.json", auth_path=tmp_path / "auth.json"
+    )
     try:
         assert win.runner is not None
         assert win.running_label.text() == "Running"
@@ -98,6 +102,109 @@ def test_manual_start_stop_and_ui_state(window):
     assert window.runner is None
     assert window.running_label.text() == "Stopped"
     assert window.bus_state_label.text() == "-"
+
+
+def test_login_gate_buttons_disabled_by_default(window):
+    assert window.gateway_config_btn.isEnabled() is False
+    assert window.dll_config_btn.isEnabled() is False
+    assert window.restart_btn.isEnabled() is False
+    assert window.change_password_btn.isEnabled() is False
+    assert window.diagnostics_btn.isEnabled() is True  # Diagnostics is read-only, never gated
+    assert window.login_status_label.text() == "Locked"
+    assert window.login_btn.text() == "Login…"
+
+
+def test_login_with_correct_password_enables_gated_buttons(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (auth.DEFAULT_PASSWORD, True)))
+    window._toggle_login()
+
+    assert window._authenticated is True
+    assert window.gateway_config_btn.isEnabled() is True
+    assert window.dll_config_btn.isEnabled() is True
+    assert window.restart_btn.isEnabled() is True
+    assert window.change_password_btn.isEnabled() is True
+    assert window.login_status_label.text() == "Unlocked"
+    assert window.login_btn.text() == "Logout"
+
+
+def test_login_with_wrong_password_keeps_buttons_disabled(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("wrong", True)))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    window._toggle_login()
+
+    assert window._authenticated is False
+    assert window.gateway_config_btn.isEnabled() is False
+    assert window.dll_config_btn.isEnabled() is False
+    assert window.restart_btn.isEnabled() is False
+
+
+def test_login_dialog_cancelled_keeps_buttons_disabled(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False)))
+    window._toggle_login()
+
+    assert window._authenticated is False
+    assert window.gateway_config_btn.isEnabled() is False
+
+
+def test_logout_re_disables_gated_buttons(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (auth.DEFAULT_PASSWORD, True)))
+    window._toggle_login()
+    assert window._authenticated is True
+
+    window._toggle_login()  # button now reads "Logout"
+    assert window._authenticated is False
+    assert window.gateway_config_btn.isEnabled() is False
+    assert window.dll_config_btn.isEnabled() is False
+    assert window.restart_btn.isEnabled() is False
+    assert window.login_status_label.text() == "Locked"
+    assert window.login_btn.text() == "Login…"
+
+
+def _log_in(window, monkeypatch, password=None):
+    from PySide6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: (password or auth.DEFAULT_PASSWORD, True))
+    )
+    window._toggle_login()
+    assert window._authenticated is True
+
+
+def test_change_password_updates_credentials(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    _log_in(window, monkeypatch)
+
+    responses = iter([("new-password", True), ("new-password", True)])
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: next(responses)))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    window._change_password()
+
+    assert auth.verify_password("new-password", window._auth_path) is True
+    assert auth.verify_password(auth.DEFAULT_PASSWORD, window._auth_path) is False
+
+
+def test_change_password_mismatch_is_rejected(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    _log_in(window, monkeypatch)
+
+    responses = iter([("new-password", True), ("different", True)])
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: next(responses)))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    window._change_password()
+
+    # Old password must still work - the mismatched change must not have applied.
+    assert auth.verify_password(auth.DEFAULT_PASSWORD, window._auth_path) is True
+    assert auth.verify_password("new-password", window._auth_path) is False
 
 
 def test_restart_applies_new_config(window):
