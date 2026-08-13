@@ -6,7 +6,6 @@ import pytest
 from cfix_api.cifx.backend import MockCifXBackend
 from cfix_api.gateway.config import StreamConfig
 from cfix_api.gateway.stream_server import StreamGatewayServer
-from cfix_api.gateway.traffic_log import TrafficLog
 
 
 @pytest.fixture
@@ -83,43 +82,26 @@ def test_connection_count_tracks_connect_and_disconnect(stream_gateway):
     assert server.connection_count == 0
 
 
-def test_write_is_recorded_to_traffic_log(stream_gateway):
-    server, backend = stream_gateway
-    traffic_log = TrafficLog()
-    server.traffic_log = traffic_log
+def test_bytes_written_counter_tracks_writes(stream_gateway):
+    server, _backend = stream_gateway
+    assert server.bytes_written == 0
     host, port = server.server_address
     with socket.create_connection((host, port), timeout=2) as sock:
         sock.sendall(b"\x11\x22\x33\x44")
         _recv_exact(sock, 4)  # drain one poll chunk so the handler loop has run at least once
-
-    deadline = time.monotonic() + 2
-    events = []
-    while time.monotonic() < deadline:
-        events = traffic_log.snapshot()
-        if events:
-            break
-        time.sleep(0.02)
-    assert len(events) >= 1
-    event = events[0]
-    assert event.transport == "TCP-STREAM"
-    assert event.peer.startswith("127.0.0.1:")
-    assert "wrote 4 bytes" in event.request_summary
-    assert event.request_hex == "11 22 33 44"
-    assert event.response_summary == ""
+        sock.sendall(b"\x55\x66\x77\x88")
+        _recv_exact(sock, 4)
+    assert server.bytes_written == 8
 
 
-def test_poll_reads_are_not_recorded_to_traffic_log(stream_gateway):
-    """Poll reads happen every poll_interval_ms (5ms here) - logging every
-    one would flood the log for no benefit, so only writes are recorded."""
+def test_bytes_read_counter_tracks_polls(stream_gateway):
     server, backend = stream_gateway
-    traffic_log = TrafficLog()
-    server.traffic_log = traffic_log
     backend.io_write(0, 0, b"\xaa\xbb\xcc\xdd")
     host, port = server.server_address
     with socket.create_connection((host, port), timeout=2) as sock:
         for _ in range(5):
             _recv_exact(sock, 4)
-    assert traffic_log.snapshot() == []
+    assert server.bytes_read >= 20
 
 
 @pytest.fixture

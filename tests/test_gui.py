@@ -18,7 +18,7 @@ pyside6 = pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from cfix_api.gateway.config import CifxConfig, GatewayConfig, TcpConfig, UdpConfig  # noqa: E402
+from cfix_api.gateway.config import CifxConfig, GatewayConfig, StreamConfig, TcpConfig, UdpConfig  # noqa: E402
 from cfix_api.gateway.protocol import Command, Request, decode_response, encode_request  # noqa: E402
 from cfix_api.gateway.tcp_server import END_BYTE, START_BYTE  # noqa: E402
 from cfix_api.gui.diagnostics_window import DiagnosticsWindow  # noqa: E402
@@ -273,6 +273,43 @@ def test_diagnostics_window_shows_traffic_and_io_after_request(window):
 
         diag._clear_traffic_log()
         assert diag.traffic_table.rowCount() == 0
+    finally:
+        diag.close()
+
+
+def test_diagnostics_window_shows_na_throughput_in_framed_mode(window):
+    window.config.tcp.port = 19870
+    window.config.udp.port = 19871
+    window._start_gateway()
+
+    diag = DiagnosticsWindow(window)
+    try:
+        diag._refresh()
+        assert "n/a" in diag.throughput_label.text().lower()
+    finally:
+        diag.close()
+
+
+def test_diagnostics_window_shows_streaming_throughput(window):
+    window.config = dataclasses.replace(
+        window.config,
+        tcp=TcpConfig(port=19872),
+        udp=UdpConfig(enabled=False),
+        stream=StreamConfig(enabled=True, write_length=4, read_length=4, poll_interval_ms=5),
+    )
+    window._start_gateway()
+
+    diag = DiagnosticsWindow(window)
+    try:
+        host, port = window.runner._tcp_server.server_address
+        with socket.create_connection((host, port), timeout=2) as sock:
+            diag._refresh()  # first sample, establishes the baseline
+            sock.sendall(b"\x11\x22\x33\x44")
+            time.sleep(0.2)
+            diag._refresh()  # second sample, should compute a rate against the baseline
+        text = diag.throughput_label.text()
+        assert "n/a" not in text.lower()
+        assert "KB/s" in text
     finally:
         diag.close()
 

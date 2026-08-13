@@ -91,9 +91,12 @@ persisted to `~/.cfix_gateway/gui_config.json` independent of the CLI's
   path, and the mock-backend toggle.
 - **Diagnostics…** — a non-modal window with a live table of recent
   TCP/UDP requests/responses (decoded: command, area/offset/length,
-  status, data) and a live hex view of the card's current input/output
-  process data at a chosen offset. Safe to leave open while the gateway
-  keeps running; survives Restart Gateway / config changes.
+  status, data), a live hex view of the card's current input/output
+  process data at a chosen offset, and — when streaming mode is active —
+  a live write/read KB/s throughput readout (sampled every 300ms from
+  cumulative byte counters, not a per-event log: streaming's poll rate is
+  too high for a per-event table to be useful). Safe to leave open while
+  the gateway keeps running; survives Restart Gateway / config changes.
 - **Restart Gateway** — manual recovery (e.g. after fixing a cable or a
   bad DLL path) without closing the app.
 - **Log** — live gateway log output.

@@ -48,7 +48,7 @@ class GatewayRunner:
 
         if self.config.tcp.enabled and self.config.stream.enabled:
             self._tcp_server = StreamGatewayServer(
-                self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream, self.traffic_log
+                self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream
             )
             self._tcp_server.serve_forever_in_thread()
             if self.config.stream.write_framing == "ascii_length_prefix":
@@ -84,6 +84,14 @@ class GatewayRunner:
     def tcp_client_count(self) -> int | None:
         """Number of currently connected TCP clients, or None if TCP is disabled."""
         return self._tcp_server.connection_count if self._tcp_server else None
+
+    @property
+    def stream_byte_counters(self) -> tuple[int, int] | None:
+        """(bytes_written, bytes_read) cumulative since the streaming server
+        started, or None if TCP isn't running in streaming mode."""
+        if isinstance(self._tcp_server, StreamGatewayServer):
+            return self._tcp_server.bytes_written, self._tcp_server.bytes_read
+        return None
 
     def stop(self) -> None:
         if self._tcp_server:
