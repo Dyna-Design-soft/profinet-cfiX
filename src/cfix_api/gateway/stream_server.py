@@ -10,6 +10,12 @@ request/response exchange:
   cifX input image at (area, read_offset) and sends them straight back to
   the client, unprompted.
 
+Each successful write is recorded to the shared TrafficLog (visible in the
+desktop app's Diagnostics window) as a raw entry - poll reads are not, since
+at a typical 10ms interval they'd flood the log/table with little value; the
+Diagnostics window's "Card Process Data" panel already shows live input/
+output image content independent of this log.
+
 `write_framing` controls how the reader finds a write frame's boundary:
 
 - "fixed": read exactly `write_length` raw bytes, every time.
@@ -28,9 +34,11 @@ import logging
 import socket
 import socketserver
 import threading
+from typing import Optional
 
 from ..cifx.backend import CifXBackend
 from .config import StreamConfig
+from .traffic_log import TrafficLog
 
 logger = logging.getLogger("cfix_api.gateway.stream")
 
@@ -134,6 +142,11 @@ class _Handler(socketserver.BaseRequestHandler):
                     backend.io_write(cfg.area, cfg.write_offset, data)
                 except Exception:
                     logger.exception("stream write failed for %s", peer)
+                else:
+                    if server.traffic_log is not None:
+                        server.traffic_log.record_raw(
+                            "TCP-STREAM", f"{peer[0]}:{peer[1]}", f"wrote {len(data)} bytes", data
+                        )
         except OSError as exc:
             logger.info("stream client %s connection error: %s", peer, exc)
         finally:
@@ -147,9 +160,17 @@ class StreamGatewayServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, host: str, port: int, backend: CifXBackend, stream_config: StreamConfig):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        backend: CifXBackend,
+        stream_config: StreamConfig,
+        traffic_log: Optional[TrafficLog] = None,
+    ):
         self.backend = backend
         self.stream_config = stream_config
+        self.traffic_log = traffic_log
         self._connection_count = 0
         self._connection_lock = threading.Lock()
         super().__init__((host, port), _Handler)
