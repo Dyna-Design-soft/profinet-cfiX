@@ -26,6 +26,34 @@ class UdpConfig:
 
 
 @dataclass
+class StreamConfig:
+    """Raw duplex TCP mode: no command byte, no frame markers.
+
+    When enabled, the TCP server (on tcp.host/tcp.port) stops speaking the
+    framed request/response protocol and instead does two independent
+    things per connection: whenever `write_length` bytes arrive from the
+    client, they're written straight to the output image at
+    (area, write_offset); every `poll_interval_ms`, `read_length` bytes are
+    read from the input image at (area, read_offset) and sent straight back
+    to the client. See docs/PROTOCOL.md "Streaming mode".
+    """
+
+    enabled: bool = False
+    area: int = 0
+    write_offset: int = 0
+    write_length: int = 4
+    read_offset: int = 0
+    read_length: int = 4
+    poll_interval_ms: int = 10
+    # "fixed": read exactly write_length raw bytes per write, every time.
+    # "ascii_length_prefix": the client instead sends the literal ASCII
+    # text `len"<N>"` immediately followed by N raw bytes - N is read off
+    # the wire per frame instead of coming from write_length (which is
+    # then ignored for writes). See docs/PROTOCOL.md "Streaming mode".
+    write_framing: str = "fixed"
+
+
+@dataclass
 class CifxConfig:
     board_name: str = "cifX0"
     channel: int = 0
@@ -44,6 +72,7 @@ class CifxConfig:
 class GatewayConfig:
     tcp: TcpConfig = field(default_factory=TcpConfig)
     udp: UdpConfig = field(default_factory=UdpConfig)
+    stream: StreamConfig = field(default_factory=StreamConfig)
     cifx: CifxConfig = field(default_factory=CifxConfig)
     log_level: str = "INFO"
 
@@ -52,6 +81,7 @@ class GatewayConfig:
         return cls(
             tcp=TcpConfig(**raw.get("tcp", {})),
             udp=UdpConfig(**raw.get("udp", {})),
+            stream=StreamConfig(**raw.get("stream", {})),
             cifx=CifxConfig(**raw.get("cifx", {})),
             log_level=raw.get("log_level", "INFO"),
         )

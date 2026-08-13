@@ -6,7 +6,7 @@ import pytest
 
 from cfix_api.cifx.backend import MockCifXBackend
 from cfix_api.gateway.protocol import Command, Request, Status, decode_response, encode_request
-from cfix_api.gateway.tcp_server import TcpGatewayServer, _Handler
+from cfix_api.gateway.tcp_server import END_BYTE, START_BYTE, TcpGatewayServer, _Handler
 from cfix_api.gateway.traffic_log import TrafficLog
 
 LENGTH_PREFIX = struct.Struct(">I")
@@ -26,9 +26,14 @@ def tcp_gateway():
 
 def _send_request(sock: socket.socket, req: Request) -> bytes:
     frame = encode_request(req)
-    sock.sendall(LENGTH_PREFIX.pack(len(frame)) + frame)
+    sock.sendall(bytes([START_BYTE]) + LENGTH_PREFIX.pack(len(frame)) + frame + bytes([END_BYTE]))
+    start = _recv_exact(sock, 1)
+    assert start[0] == START_BYTE
     (length,) = LENGTH_PREFIX.unpack(_recv_exact(sock, 4))
-    return _recv_exact(sock, length)
+    response = _recv_exact(sock, length)
+    end = _recv_exact(sock, 1)
+    assert end[0] == END_BYTE
+    return response
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -84,6 +89,24 @@ def test_pipelined_requests_answered_in_order(tcp_gateway):
             )
             resp = decode_response(resp_frame)
             assert resp.data == bytes([offset, offset, offset, offset])
+
+
+def test_bad_start_byte_closes_connection(tcp_gateway):
+    host, port = tcp_gateway.server_address
+    frame = encode_request(Request(command=Command.GET_STATUS, area=0, offset=0, length=0))
+    with socket.create_connection((host, port), timeout=2) as sock:
+        sock.sendall(bytes([0x00]) + LENGTH_PREFIX.pack(len(frame)) + frame + bytes([END_BYTE]))
+        assert sock.recv(1) == b""
+
+
+def test_bad_end_byte_closes_connection(tcp_gateway):
+    host, port = tcp_gateway.server_address
+    frame = encode_request(Request(command=Command.GET_STATUS, area=0, offset=0, length=0))
+    with socket.create_connection((host, port), timeout=2) as sock:
+        # Bad end byte is caught before the request is dispatched, so no
+        # response is sent - the connection just closes.
+        sock.sendall(bytes([START_BYTE]) + LENGTH_PREFIX.pack(len(frame)) + frame + bytes([0x00]))
+        assert sock.recv(1) == b""
 
 
 def test_handler_disables_nagle_on_accepted_socket():

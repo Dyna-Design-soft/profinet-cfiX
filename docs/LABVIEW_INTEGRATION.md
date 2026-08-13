@@ -11,7 +11,98 @@ default byte order for Flatten To String / Unflatten From String and for
 Type Cast, so no byte-swapping is needed if you build frames with those
 primitives.
 
-## TCP client (VI outline)
+There are two TCP modes: the **framed request/response protocol** below
+(Command byte, length prefix, explicit reply per request), and a simpler
+**streaming mode** with no frame protocol at all — just fixed-size raw
+byte chunks in each direction, described further down. Streaming mode is
+opt-in via the gateway config (`stream.enabled`) and is what to use if you
+don't want to build/parse any header in LabVIEW.
+
+## Streaming mode (`stream.enabled` — no Command byte, no framing)
+
+Turn this on in the gateway's config file (see
+`config/gateway.mock.stream.json` for a working example):
+
+```json
+"stream": {
+  "enabled": true,
+  "area": 0,
+  "write_offset": 0,
+  "write_framing": "ascii_length_prefix",
+  "write_length": 4,
+  "read_offset": 0,
+  "read_length": 4,
+  "poll_interval_ms": 10
+}
+```
+
+With this on, the TCP port (`9800` by default) stops speaking the framed
+protocol below entirely. Instead:
+
+- **Write loop (LabVIEW → gateway → drive)**: build your telegram bytes
+  (setpoint/control word — can be any size, e.g. the 103-byte multi-drive
+  frame in the worked example below) and **TCP Write** it, wrapped
+  according to `write_framing`:
+  - `"fixed"`: **TCP Write** exactly `write_length` bytes, nothing else
+    — no header, no length, no command.
+  - `"ascii_length_prefix"`: **TCP Write** the literal ASCII text `len"`,
+    then your frame's byte count as ASCII decimal digits, then a closing
+    `"`, then the frame bytes themselves — all in one write. Build the
+    `len"N"` part with **Number To Decimal String** on the byte count,
+    concatenated with string constants `len"` and `"` (built as ASCII
+    string constants, not numeric constants), then **Concatenate
+    Strings**/**Build Array** that with your frame's byte array before
+    the **TCP Write**. This mode lets the frame size vary between writes
+    without editing the gateway config.
+  Whenever the gateway has a complete frame, it writes it straight to
+  the cifX output image at (`area`, `write_offset`) — unparsed, headers
+  and all. Run this in a Timed Loop at whatever rate you want to send new
+  setpoints.
+- **Read loop (gateway → LabVIEW)**: in a separate loop (or the same one,
+  after the write), **TCP Read** exactly `read_length` bytes — no header
+  to strip, this direction is always fixed-size. The gateway pushes a
+  fresh chunk from the cifX input image at (`area`, `read_offset`) every
+  `poll_interval_ms`, unprompted — it is **not** a reply to your write,
+  it's a continuous feed. If your read loop runs slower than
+  `poll_interval_ms`, TCP just buffers the backlog; read in multiples of
+  `read_length` bytes if you want to drain it and keep only the latest.
+- These two loops are independent — you can structure them as two
+  parallel LabVIEW loops on the same TCP Read/Write refnum, one only ever
+  writing, one only ever reading.
+
+### Worked example: a 103-byte multi-drive write frame
+
+A frame carrying two drives' data in one write, structured as
+`[6-byte header][64-byte drive 1 data][7-byte header][24-byte drive 2
+data][2-byte trailer]` (header/trailer bytes are `0x80`, meaningful to
+the drive side, not the gateway — the gateway treats the whole 103 bytes
+as one opaque blob):
+
+```
+80 80 80 80 80 80                                              (header, 6 bytes)
+04 00 00 00 00 00 2C 88 D3 78 13 33 EC CD 00 00 02 20 00 00 …  (drive 1 data, 64 bytes)
+80 80 80 80 80 80 80                                           (header, 7 bytes)
+04 3E 81 00 00 00 00 00 40 00 00 00 00 00 00 00 00 01 40 …     (drive 2 data, 24 bytes)
+80 80                                                           (trailer, 2 bytes)
+```
+
+With `write_framing: "ascii_length_prefix"`, the bytes actually sent over
+TCP are the ASCII text `len"103"` (8 bytes) immediately followed by the
+103 frame bytes above (111 bytes total on the wire) — the gateway strips
+the `len"103"` text and writes only the 103 frame bytes to the DLL.
+
+Verify it without LabVIEW first:
+
+```bash
+python -m cfix_api.gateway.cli --config config/gateway.mock.stream.json
+```
+
+then connect with a short Python script using plain
+`socket.sendall`/`socket.recv` (see `tests/test_stream_gateway.py` for a
+working example against the mock backend) and confirm your frame bytes
+land in the output image and get echoed back on the read loop.
+
+## Framed protocol — TCP client (VI outline)
 
 1. **TCP Open Connection** to the gateway host/port (default `9800`).
 2. Build the request frame as a byte string:
@@ -23,16 +114,25 @@ primitives.
    - Easiest built with **Flatten To String** on a cluster of
      `U8, U8, U16, U16` (+ a byte array for `Data`), with "network byte
      order" left checked (default).
-3. Prefix the frame with its length as a **U32 big-endian** (4 bytes) —
-   also via Flatten To String — and concatenate: `[length][frame]`.
-4. **TCP Write** the concatenated bytes.
-5. **TCP Read** exactly 4 bytes, **Unflatten From String** as U32 to get
-   the response length, then **TCP Read** exactly that many more bytes.
-6. **Unflatten From String** the response as a cluster of
+3. Wrap the frame with a fixed **START byte** `0x82`, its length as a
+   **U32 big-endian** (4 bytes), and a fixed **END byte** `0x83`, then
+   concatenate: `[0x82][length][frame][0x83]`. Build `0x82`/`0x83` as
+   plain U8 constants — don't try to detect them elsewhere in the byte
+   stream, they're only meaningful at these fixed positions.
+4. **TCP Write** the concatenated bytes in one write.
+5. **TCP Read** exactly 1 byte and check it's `0x82`, then **TCP Read**
+   exactly 4 bytes and **Unflatten From String** as U32 to get the
+   response length, then **TCP Read** exactly that many more bytes for
+   the response frame, then **TCP Read** exactly 1 more byte and check
+   it's `0x83`.
+6. **Unflatten From String** the response frame as a cluster of
    `U8 (status), U8 (command), U16 (data length)`, then take the
    remaining bytes as `Data`.
 7. Check `status == 0`; non-zero means the gateway rejected the frame or
    the CIFX driver call failed (see `docs/PROTOCOL.md` for status codes).
+   Separately, if the START or END byte you read back doesn't match,
+   the stream is desynced and the gateway will have already closed the
+   connection — don't retry reads on the same connection, reopen it.
 8. **TCP Close Connection** when done, or keep it open and repeat steps
    2–7 for each cyclic poll (recommended for a periodic drive-control
    loop — avoid reopening the connection every scan).

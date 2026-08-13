@@ -103,8 +103,14 @@ changes take effect immediately.
 
 The gateway passes raw PROFINET cyclic process-data bytes through as-is —
 it does not parse drive telegrams. See `docs/PROTOCOL.md` for the exact
-frame layout (both transports share the same frame; TCP adds a 4-byte
-length prefix since it's a stream, UDP uses one frame per datagram).
+frame layout (both transports share the same frame; TCP wraps it with a
+start byte, a 4-byte length, and an end byte since it's a stream, UDP
+uses one frame per datagram).
+
+There's also an opt-in **streaming mode** (`stream.enabled` in the config)
+that drops the framed protocol on TCP entirely in favor of fixed-size raw
+byte chunks pushed/pulled with no header at all — see the "Streaming mode"
+sections in `docs/PROTOCOL.md` and `docs/LABVIEW_INTEGRATION.md`.
 
 ## Latency (target: 20-50ms cyclic round trip)
 
@@ -126,9 +132,9 @@ is exactly the pattern Nagle's algorithm (batching small writes) plus
 delayed ACK is known to stall by tens of milliseconds - landing right in
 the middle of a 20-50ms budget if it triggers. The gateway now sets
 `TCP_NODELAY` on every accepted connection to rule that out server-side;
-`docs/LABVIEW_INTEGRATION.md` already documents writing the length prefix
-and frame as a single concatenated write, which avoids the split-write
-pattern that triggers it in the first place. UDP has no such issue at
+`docs/LABVIEW_INTEGRATION.md` already documents writing the start byte,
+length prefix, frame, and end byte as a single concatenated write, which
+avoids the split-write pattern that triggers it in the first place. UDP has no such issue at
 all, at the cost of being unacknowledged/unordered - prefer it if TCP
 still shows jitter you can't explain.
 

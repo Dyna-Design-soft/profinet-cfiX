@@ -9,6 +9,16 @@
     "host": "0.0.0.0",
     "port": 9801
   },
+  "stream": {
+    "enabled": false,
+    "area": 0,
+    "write_offset": 0,
+    "write_framing": "fixed",
+    "write_length": 4,
+    "read_offset": 0,
+    "read_length": 4,
+    "poll_interval_ms": 10
+  },
   "cifx": {
     "board_name": "cifX0",
     "channel": 0,

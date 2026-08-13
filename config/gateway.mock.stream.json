@@ -1,0 +1,24 @@
+{
+  "tcp": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 9800
+  },
+  "udp": {
+    "enabled": false
+  },
+  "stream": {
+    "enabled": true,
+    "area": 0,
+    "write_offset": 0,
+    "write_framing": "ascii_length_prefix",
+    "write_length": 103,
+    "read_offset": 0,
+    "read_length": 103,
+    "poll_interval_ms": 10
+  },
+  "cifx": {
+    "mock": true
+  },
+  "log_level": "INFO"
+}
