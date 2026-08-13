@@ -8,6 +8,7 @@ import time
 
 from ..cifx.backend import CifXBackend, HilscherCifXBackend, MockCifXBackend
 from .config import GatewayConfig
+from .stream_server import StreamGatewayServer
 from .tcp_server import TcpGatewayServer
 from .traffic_log import TrafficLog
 from .udp_server import UdpGatewayServer
@@ -34,7 +35,7 @@ class GatewayRunner:
         self.config = config
         self.backend = build_backend(config)
         self.traffic_log = TrafficLog()
-        self._tcp_server: TcpGatewayServer | None = None
+        self._tcp_server: TcpGatewayServer | StreamGatewayServer | None = None
         self._udp_server: UdpGatewayServer | None = None
 
     def start(self) -> None:
@@ -45,7 +46,20 @@ class GatewayRunner:
             getattr(self.backend, "channel", "-"),
         )
 
-        if self.config.tcp.enabled:
+        if self.config.tcp.enabled and self.config.stream.enabled:
+            self._tcp_server = StreamGatewayServer(
+                self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream
+            )
+            self._tcp_server.serve_forever_in_thread()
+            logger.info(
+                "TCP gateway listening on %s:%d (streaming mode: write %d bytes @ area=%d off=%d, "
+                "poll %d bytes @ area=%d off=%d every %dms)",
+                self.config.tcp.host, self.config.tcp.port,
+                self.config.stream.write_length, self.config.stream.area, self.config.stream.write_offset,
+                self.config.stream.read_length, self.config.stream.area, self.config.stream.read_offset,
+                self.config.stream.poll_interval_ms,
+            )
+        elif self.config.tcp.enabled:
             self._tcp_server = TcpGatewayServer(
                 self.config.tcp.host, self.config.tcp.port, self.backend, self.traffic_log
             )

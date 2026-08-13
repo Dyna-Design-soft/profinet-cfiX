@@ -94,3 +94,38 @@ Sent on the wire as: `82 00 00 00 06 01 00 00 00 00 10 83`
 Response frame (success, 16 bytes of data):
 `00 01 00 10 <16 bytes>` (4 + 16 = 20 bytes)
 Sent on the wire as: `82 00 00 00 14 00 01 00 10 <16 bytes> 83`
+
+## Streaming mode (`stream.enabled` in the gateway config)
+
+This is a different mode entirely from everything above — no Command byte,
+no frame markers, no request/response. It's opt-in via `config.stream` (see
+`config/gateway.example.json`, `config/gateway.mock.stream.json`) and, when
+on, replaces the framed protocol on the TCP port described above (UDP is
+unaffected).
+
+Per TCP connection, two independent loops run at once:
+
+- **Write direction**: the gateway blocks reading exactly `write_length`
+  raw bytes from the client (no header, no length prefix — just that many
+  bytes), then calls `io_write(area, write_offset, data)` — straight to the
+  cifX output image. It then waits for the next `write_length` bytes and
+  repeats. There is no response to a write; the client just keeps sending
+  fixed-size chunks whenever it has a new value to send.
+- **Read direction**: independently of anything the client sends, every
+  `poll_interval_ms` the gateway calls `io_read(area, read_offset,
+  read_length)` and sends those raw bytes straight to the client — again,
+  no header, no length prefix. This isn't a reply to a request; it's a
+  continuous, unprompted push at a fixed rate for as long as the connection
+  is open.
+
+Because the two directions are independent loops, the client can write and
+read as separate LabVIEW loops too — one loop doing `TCP Write` of
+`write_length` bytes whenever it has a new setpoint, another loop doing
+`TCP Read` of `read_length` bytes in an unconditional loop to drain the
+continuous stream of status data. There's nothing to correlate a read with
+a write; the input data you get back is just "whatever the drive's input
+image held at the last poll," not a response to any particular write.
+
+`write_length`/`read_length` are fixed per gateway config — every chunk in
+each direction is exactly that many bytes, so no length field is needed on
+the wire to know where one chunk ends and the next begins.

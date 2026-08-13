@@ -107,6 +107,11 @@ frame layout (both transports share the same frame; TCP wraps it with a
 start byte, a 4-byte length, and an end byte since it's a stream, UDP
 uses one frame per datagram).
 
+There's also an opt-in **streaming mode** (`stream.enabled` in the config)
+that drops the framed protocol on TCP entirely in favor of fixed-size raw
+byte chunks pushed/pulled with no header at all — see the "Streaming mode"
+sections in `docs/PROTOCOL.md` and `docs/LABVIEW_INTEGRATION.md`.
+
 ## Latency (target: 20-50ms cyclic round trip)
 
 A cyclic control loop's total latency has three independent pieces —
