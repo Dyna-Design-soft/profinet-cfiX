@@ -13,6 +13,7 @@
     "enabled": false,
     "area": 0,
     "write_offset": 0,
+    "write_framing": "fixed",
     "write_length": 4,
     "read_offset": 0,
     "read_length": 4,

@@ -51,11 +51,15 @@ class GatewayRunner:
                 self.config.tcp.host, self.config.tcp.port, self.backend, self.config.stream
             )
             self._tcp_server.serve_forever_in_thread()
+            if self.config.stream.write_framing == "ascii_length_prefix":
+                write_desc = 'write len"N" + N bytes (ascii_length_prefix)'
+            else:
+                write_desc = f"write {self.config.stream.write_length} bytes (fixed)"
             logger.info(
-                "TCP gateway listening on %s:%d (streaming mode: write %d bytes @ area=%d off=%d, "
+                'TCP gateway listening on %s:%d (streaming mode: %s @ area=%d off=%d, '
                 "poll %d bytes @ area=%d off=%d every %dms)",
                 self.config.tcp.host, self.config.tcp.port,
-                self.config.stream.write_length, self.config.stream.area, self.config.stream.write_offset,
+                write_desc, self.config.stream.area, self.config.stream.write_offset,
                 self.config.stream.read_length, self.config.stream.area, self.config.stream.read_offset,
                 self.config.stream.poll_interval_ms,
             )

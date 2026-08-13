@@ -11,6 +11,7 @@
     "enabled": true,
     "area": 0,
     "write_offset": 0,
+    "write_framing": "ascii_length_prefix",
     "write_length": 103,
     "read_offset": 0,
     "read_length": 103,

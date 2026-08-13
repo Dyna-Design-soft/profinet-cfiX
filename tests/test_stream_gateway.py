@@ -80,3 +80,69 @@ def test_connection_count_tracks_connect_and_disconnect(stream_gateway):
     while server.connection_count != 0 and time.monotonic() < deadline:
         time.sleep(0.02)
     assert server.connection_count == 0
+
+
+@pytest.fixture
+def ascii_length_prefix_gateway():
+    backend = MockCifXBackend()
+    backend.open()
+    config = StreamConfig(
+        enabled=True,
+        area=0,
+        write_offset=0,
+        write_framing="ascii_length_prefix",
+        read_offset=0,
+        read_length=4,
+        poll_interval_ms=5,
+    )
+    server = StreamGatewayServer("127.0.0.1", 0, backend, config)
+    server.serve_forever_in_thread()
+    yield server, backend
+    server.shutdown()
+    server.server_close()
+    backend.close()
+
+
+def test_ascii_length_prefix_write_reaches_output_image(ascii_length_prefix_gateway):
+    server, backend = ascii_length_prefix_gateway
+    host, port = server.server_address
+    frame = bytes.fromhex(
+        "8080808080800400000000002c88d3781333eccd000002200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080808080808080043e810000000000400000000000000000014000400040008080"
+    )
+    assert len(frame) == 103
+    with socket.create_connection((host, port), timeout=2) as sock:
+        sock.sendall(f'len"{len(frame)}"'.encode("ascii") + frame)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if backend.io_read(0, 0, len(frame)) == frame:
+                break
+            time.sleep(0.02)
+    assert backend.io_read(0, 0, len(frame)) == frame
+
+
+def _assert_connection_closes(sock: socket.socket) -> None:
+    """Reads (and discards) any in-flight poller bytes until the socket
+    actually closes, instead of asserting on the very next recv() - the
+    independent poll loop may still deliver a chunk or two first."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        chunk = sock.recv(4096)
+        if chunk == b"":
+            return
+    pytest.fail("connection did not close within timeout")
+
+
+def test_ascii_length_prefix_bad_literal_closes_connection(ascii_length_prefix_gateway):
+    server, _backend = ascii_length_prefix_gateway
+    host, port = server.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        sock.sendall(b'xen"4"\x01\x02\x03\x04')
+        _assert_connection_closes(sock)
+
+
+def test_ascii_length_prefix_non_digit_length_closes_connection(ascii_length_prefix_gateway):
+    server, _backend = ascii_length_prefix_gateway
+    host, port = server.server_address
+    with socket.create_connection((host, port), timeout=2) as sock:
+        sock.sendall(b'len"4x"\x01\x02\x03\x04')
+        _assert_connection_closes(sock)

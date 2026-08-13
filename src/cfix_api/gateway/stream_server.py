@@ -1,14 +1,23 @@
-"""Raw duplex TCP streaming gateway: no command byte, no frame markers.
+"""Raw duplex TCP streaming gateway: no command byte, no fixed frame markers.
 
 Two independent loops run per connection instead of a lock-step
 request/response exchange:
 
-- Reader: blocks for exactly `write_length` bytes from the client, then
-  writes them straight to the cifX output image at (area, write_offset).
-  Repeats for as long as the client keeps sending.
+- Reader: gets the next write frame from the client (see `write_framing`
+  below), then writes it straight to the cifX output image at
+  (area, write_offset). Repeats for as long as the client keeps sending.
 - Poller: every `poll_interval_ms`, reads `read_length` bytes from the
   cifX input image at (area, read_offset) and sends them straight back to
   the client, unprompted.
+
+`write_framing` controls how the reader finds a write frame's boundary:
+
+- "fixed": read exactly `write_length` raw bytes, every time.
+- "ascii_length_prefix": read the literal ASCII text `len"` (4 bytes),
+  then ASCII decimal digit characters up to the next `"`, parse those
+  digits as the frame length N, then read exactly N raw bytes - those N
+  bytes (not the `len"...""` text) are the frame written to the DLL.
+  Example on the wire: `len"103"` followed by 103 raw bytes.
 
 See docs/PROTOCOL.md "Streaming mode" and docs/LABVIEW_INTEGRATION.md.
 """
@@ -25,6 +34,10 @@ from .config import StreamConfig
 
 logger = logging.getLogger("cfix_api.gateway.stream")
 
+_LEN_PREFIX_LITERAL = b'len"'
+_MAX_ASCII_FRAME_SIZE = 64 * 1024
+_MAX_LENGTH_DIGITS = 6  # up to 999999 - comfortably covers _MAX_ASCII_FRAME_SIZE
+
 
 def _recv_exact(sock, n: int) -> bytes:
     chunks = []
@@ -36,6 +49,43 @@ def _recv_exact(sock, n: int) -> bytes:
         chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks)
+
+
+def _recv_byte(sock) -> bytes:
+    b = sock.recv(1)
+    if not b:
+        raise ConnectionError("connection closed")
+    return b
+
+
+class FramingError(Exception):
+    """The client sent something that doesn't match the configured write_framing."""
+
+
+def _recv_ascii_length_prefixed_frame(sock) -> bytes:
+    prefix = _recv_exact(sock, len(_LEN_PREFIX_LITERAL))
+    if prefix != _LEN_PREFIX_LITERAL:
+        raise FramingError(f"expected literal {_LEN_PREFIX_LITERAL!r}, got {prefix!r}")
+
+    digits = b""
+    while True:
+        ch = _recv_byte(sock)
+        if ch == b'"':
+            break
+        if not ch.isdigit():
+            raise FramingError(f"non-digit byte {ch!r} in length field")
+        digits += ch
+        if len(digits) > _MAX_LENGTH_DIGITS:
+            raise FramingError(f"length field too long: {digits!r}...")
+
+    if not digits:
+        raise FramingError('empty length field between len"" quotes')
+
+    length = int(digits)
+    if length > _MAX_ASCII_FRAME_SIZE:
+        raise FramingError(f"declared length {length} exceeds max {_MAX_ASCII_FRAME_SIZE}")
+
+    return _recv_exact(sock, length)
 
 
 class _Handler(socketserver.BaseRequestHandler):
@@ -71,8 +121,14 @@ class _Handler(socketserver.BaseRequestHandler):
         try:
             while not stop.is_set():
                 try:
-                    data = _recv_exact(self.request, cfg.write_length)
+                    if cfg.write_framing == "ascii_length_prefix":
+                        data = _recv_ascii_length_prefixed_frame(self.request)
+                    else:
+                        data = _recv_exact(self.request, cfg.write_length)
                 except ConnectionError:
+                    break
+                except FramingError as exc:
+                    logger.warning("stream client %s bad frame (%s); closing", peer, exc)
                     break
                 try:
                     backend.io_write(cfg.area, cfg.write_offset, data)

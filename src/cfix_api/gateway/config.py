@@ -45,6 +45,12 @@ class StreamConfig:
     read_offset: int = 0
     read_length: int = 4
     poll_interval_ms: int = 10
+    # "fixed": read exactly write_length raw bytes per write, every time.
+    # "ascii_length_prefix": the client instead sends the literal ASCII
+    # text `len"<N>"` immediately followed by N raw bytes - N is read off
+    # the wire per frame instead of coming from write_length (which is
+    # then ignored for writes). See docs/PROTOCOL.md "Streaming mode".
+    write_framing: str = "fixed"
 
 
 @dataclass

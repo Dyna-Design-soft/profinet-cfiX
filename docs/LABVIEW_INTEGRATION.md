@@ -28,6 +28,7 @@ Turn this on in the gateway's config file (see
   "enabled": true,
   "area": 0,
   "write_offset": 0,
+  "write_framing": "ascii_length_prefix",
   "write_length": 4,
   "read_offset": 0,
   "read_length": 4,
@@ -38,27 +39,57 @@ Turn this on in the gateway's config file (see
 With this on, the TCP port (`9800` by default) stops speaking the framed
 protocol below entirely. Instead:
 
-- **Write loop (LabVIEW → gateway → drive)**: build a byte array of
-  exactly `write_length` bytes (your setpoint/control word) and **TCP
-  Write** it — nothing else, no header, no length, no command. Whenever
-  the gateway has received `write_length` bytes, it writes them straight
-  to the cifX output image at (`area`, `write_offset`). Run this in a
-  Timed Loop at whatever rate you want to send new setpoints.
+- **Write loop (LabVIEW → gateway → drive)**: build your telegram bytes
+  (setpoint/control word — can be any size, e.g. the 103-byte multi-drive
+  frame in the worked example below) and **TCP Write** it, wrapped
+  according to `write_framing`:
+  - `"fixed"`: **TCP Write** exactly `write_length` bytes, nothing else
+    — no header, no length, no command.
+  - `"ascii_length_prefix"`: **TCP Write** the literal ASCII text `len"`,
+    then your frame's byte count as ASCII decimal digits, then a closing
+    `"`, then the frame bytes themselves — all in one write. Build the
+    `len"N"` part with **Number To Decimal String** on the byte count,
+    concatenated with string constants `len"` and `"` (built as ASCII
+    string constants, not numeric constants), then **Concatenate
+    Strings**/**Build Array** that with your frame's byte array before
+    the **TCP Write**. This mode lets the frame size vary between writes
+    without editing the gateway config.
+  Whenever the gateway has a complete frame, it writes it straight to
+  the cifX output image at (`area`, `write_offset`) — unparsed, headers
+  and all. Run this in a Timed Loop at whatever rate you want to send new
+  setpoints.
 - **Read loop (gateway → LabVIEW)**: in a separate loop (or the same one,
-  after the write), **TCP Read** exactly `read_length` bytes — again no
-  header to strip. The gateway pushes a fresh chunk from the cifX input
-  image at (`area`, `read_offset`) every `poll_interval_ms`, unprompted —
-  it is **not** a reply to your write, it's a continuous feed. If your
-  read loop runs slower than `poll_interval_ms`, TCP just buffers the
-  backlog; read in multiples of `read_length` bytes if you want to drain
-  it and keep only the latest.
+  after the write), **TCP Read** exactly `read_length` bytes — no header
+  to strip, this direction is always fixed-size. The gateway pushes a
+  fresh chunk from the cifX input image at (`area`, `read_offset`) every
+  `poll_interval_ms`, unprompted — it is **not** a reply to your write,
+  it's a continuous feed. If your read loop runs slower than
+  `poll_interval_ms`, TCP just buffers the backlog; read in multiples of
+  `read_length` bytes if you want to drain it and keep only the latest.
 - These two loops are independent — you can structure them as two
   parallel LabVIEW loops on the same TCP Read/Write refnum, one only ever
   writing, one only ever reading.
-- `write_length` and `read_length` are config-side constants — every
-  chunk in each direction is always exactly that many bytes, which is how
-  the gateway knows where one chunk ends without a length field on the
-  wire.
+
+### Worked example: a 103-byte multi-drive write frame
+
+A frame carrying two drives' data in one write, structured as
+`[6-byte header][64-byte drive 1 data][7-byte header][24-byte drive 2
+data][2-byte trailer]` (header/trailer bytes are `0x80`, meaningful to
+the drive side, not the gateway — the gateway treats the whole 103 bytes
+as one opaque blob):
+
+```
+80 80 80 80 80 80                                              (header, 6 bytes)
+04 00 00 00 00 00 2C 88 D3 78 13 33 EC CD 00 00 02 20 00 00 …  (drive 1 data, 64 bytes)
+80 80 80 80 80 80 80                                           (header, 7 bytes)
+04 3E 81 00 00 00 00 00 40 00 00 00 00 00 00 00 00 01 40 …     (drive 2 data, 24 bytes)
+80 80                                                           (trailer, 2 bytes)
+```
+
+With `write_framing: "ascii_length_prefix"`, the bytes actually sent over
+TCP are the ASCII text `len"103"` (8 bytes) immediately followed by the
+103 frame bytes above (111 bytes total on the wire) — the gateway strips
+the `len"103"` text and writes only the 103 frame bytes to the DLL.
 
 Verify it without LabVIEW first:
 
@@ -66,10 +97,10 @@ Verify it without LabVIEW first:
 python -m cfix_api.gateway.cli --config config/gateway.mock.stream.json
 ```
 
-then connect with any raw TCP tool (e.g. `nc 127.0.0.1 9800`, or a short
-Python script using plain `socket.sendall`/`socket.recv`) and confirm 4
-bytes come back every ~10ms, and that whatever 4 bytes you send show up on
-the next read.
+then connect with a short Python script using plain
+`socket.sendall`/`socket.recv` (see `tests/test_stream_gateway.py` for a
+working example against the mock backend) and confirm your frame bytes
+land in the output image and get echoed back on the read loop.
 
 ## Framed protocol — TCP client (VI outline)
 

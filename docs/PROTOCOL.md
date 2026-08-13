@@ -105,27 +105,44 @@ unaffected).
 
 Per TCP connection, two independent loops run at once:
 
-- **Write direction**: the gateway blocks reading exactly `write_length`
-  raw bytes from the client (no header, no length prefix — just that many
-  bytes), then calls `io_write(area, write_offset, data)` — straight to the
-  cifX output image. It then waits for the next `write_length` bytes and
-  repeats. There is no response to a write; the client just keeps sending
-  fixed-size chunks whenever it has a new value to send.
+- **Write direction**: the gateway reads one write frame from the client
+  (how it finds the frame boundary depends on `stream.write_framing`, see
+  below), then calls `io_write(area, write_offset, data)` — straight to
+  the cifX output image, whole frame, unparsed. It then waits for the
+  next write frame and repeats. There is no response to a write; the
+  client just keeps sending frames whenever it has a new value to send.
 - **Read direction**: independently of anything the client sends, every
   `poll_interval_ms` the gateway calls `io_read(area, read_offset,
-  read_length)` and sends those raw bytes straight to the client — again,
-  no header, no length prefix. This isn't a reply to a request; it's a
-  continuous, unprompted push at a fixed rate for as long as the connection
-  is open.
+  read_length)` and sends those raw bytes straight to the client — no
+  header, no length prefix, always exactly `read_length` bytes. This
+  isn't a reply to a request; it's a continuous, unprompted push at a
+  fixed rate for as long as the connection is open.
 
 Because the two directions are independent loops, the client can write and
-read as separate LabVIEW loops too — one loop doing `TCP Write` of
-`write_length` bytes whenever it has a new setpoint, another loop doing
-`TCP Read` of `read_length` bytes in an unconditional loop to drain the
-continuous stream of status data. There's nothing to correlate a read with
-a write; the input data you get back is just "whatever the drive's input
-image held at the last poll," not a response to any particular write.
+read as separate LabVIEW loops too — one loop doing `TCP Write` whenever
+it has a new setpoint, another loop doing `TCP Read` of `read_length`
+bytes in an unconditional loop to drain the continuous stream of status
+data. There's nothing to correlate a read with a write; the input data you
+get back is just "whatever the drive's input image held at the last
+poll," not a response to any particular write.
 
-`write_length`/`read_length` are fixed per gateway config — every chunk in
-each direction is exactly that many bytes, so no length field is needed on
-the wire to know where one chunk ends and the next begins.
+### `write_framing`: how the gateway finds a write frame's boundary
+
+- **`"fixed"`** (default): every write frame is exactly `write_length`
+  raw bytes, always. No header, no length field on the wire at all — the
+  gateway just reads that many bytes and treats them as one frame.
+- **`"ascii_length_prefix"`**: the client instead sends the literal ASCII
+  text `len"` (4 bytes), then ASCII decimal digit characters giving the
+  frame's byte count, then a closing `"`, immediately followed by that
+  many raw bytes. `write_length` is ignored in this mode — the length
+  comes from the client on a per-frame basis instead of a fixed gateway
+  config value, so frame size can vary between writes without editing the
+  config. Example: to write a 103-byte frame, the client sends the 8
+  ASCII bytes `len"103"` followed by the 103 raw bytes — the gateway
+  writes only those 103 bytes to the DLL, not the `len"103"` text itself.
+  A malformed prefix (wrong literal, a non-digit byte before the closing
+  `"`, or a declared length over 64KB) closes the connection, the same as
+  a desynced fixed-size stream would.
+
+`read_length` has no equivalent framing option yet — the poll direction is
+always a fixed-size raw push.
