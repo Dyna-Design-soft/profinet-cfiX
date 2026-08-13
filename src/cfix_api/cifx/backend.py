@@ -67,6 +67,18 @@ class CifXBackend(abc.ABC):
     def set_host_state(self, ready: bool) -> None: ...
 
     @abc.abstractmethod
+    def set_bus_state(self, on: bool) -> None:
+        """Explicitly starts (or stops) the PROFINET bus. A card can be
+        configured and host-ready and still not actively exchange data
+        with devices until this is set - see GatewayRunner.start()."""
+
+    @abc.abstractmethod
+    def set_config_lock(self, locked: bool) -> None:
+        """Locks/unlocks the channel's downloaded configuration. Called
+        unlocked at startup, mirroring a known-working reference sequence
+        (Unlock Configuration -> Set Host Ready -> Set Bus On)."""
+
+    @abc.abstractmethod
     def watchdog_trigger(self) -> None: ...
 
     @abc.abstractmethod
@@ -234,6 +246,26 @@ class HilscherCifXBackend(CifXBackend):
         if rc != e.CIFX_NO_ERROR:
             raise e.CifXError("xChannelHostState", rc)
 
+    def set_bus_state(self, on: bool) -> None:
+        cmd = e.CIFX_BUS_STATE_ON if on else e.CIFX_BUS_STATE_OFF
+        state = ct.c_uint32(0)
+        rc = self._call(
+            "xChannelBusState",
+            lambda: self._lib.dll.xChannelBusState(self._hchannel, cmd, ct.byref(state), self.io_timeout_ms),
+        )
+        if rc != e.CIFX_NO_ERROR:
+            raise e.CifXError("xChannelBusState", rc)
+
+    def set_config_lock(self, locked: bool) -> None:
+        cmd = e.CIFX_CONFIG_LOCK if locked else e.CIFX_CONFIG_UNLOCK
+        state = ct.c_uint32(0)
+        rc = self._call(
+            "xChannelConfigLock",
+            lambda: self._lib.dll.xChannelConfigLock(self._hchannel, cmd, ct.byref(state), self.io_timeout_ms),
+        )
+        if rc != e.CIFX_NO_ERROR:
+            raise e.CifXError("xChannelConfigLock", rc)
+
     def watchdog_trigger(self) -> None:
         dummy = ct.c_uint32(0)
         rc = self._call(
@@ -260,6 +292,7 @@ class MockCifXBackend(CifXBackend):
         self._area_size = area_size
         self._bus_state = e.CIFX_BUS_STATE_OFF
         self._host_state = e.CIFX_HOST_STATE_NOT_READY
+        self._config_locked = False
         self._is_open = False
 
     def _area(self, area: int) -> bytearray:
@@ -308,6 +341,14 @@ class MockCifXBackend(CifXBackend):
     def set_host_state(self, ready: bool) -> None:
         self._check_open()
         self._host_state = e.CIFX_HOST_STATE_READY if ready else e.CIFX_HOST_STATE_NOT_READY
+
+    def set_bus_state(self, on: bool) -> None:
+        self._check_open()
+        self._bus_state = e.CIFX_BUS_STATE_ON if on else e.CIFX_BUS_STATE_OFF
+
+    def set_config_lock(self, locked: bool) -> None:
+        self._check_open()
+        self._config_locked = locked
 
     def watchdog_trigger(self) -> None:
         self._check_open()

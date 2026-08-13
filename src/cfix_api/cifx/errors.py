@@ -52,6 +52,17 @@ CIFX_BUS_STATE_OFF = 0
 CIFX_BUS_STATE_ON = 1
 CIFX_BUS_STATE_GETSTATE = 2
 
+# Channel configuration lock (xChannelConfigLock): same (cmd, state-out,
+# timeout) shape as host/bus state above. Confirmed against a working
+# Hilscher CIFX LabVIEW class library (Hilscher CIFX.lvlib:Hilscher CIFX
+# Channel.lvclass:Config Lock.vi) calling xChannelConfigLock(hChannel,
+# ulCmd, pulState, ulTimeout) with ulCmd = "Unlock Configuration" and
+# getting status = OK back - not just inferred from the sibling functions'
+# pattern.
+CIFX_CONFIG_UNLOCK = 0
+CIFX_CONFIG_LOCK = 1
+CIFX_CONFIG_GETSTATE = 2
+
 # Watchdog commands (xChannelWatchdog). Not exercised by Hilscher's PyCifx
 # demo, so - unlike the constants above - these are not cross-checked
 # against Hilscher's own source; they follow the commonly documented

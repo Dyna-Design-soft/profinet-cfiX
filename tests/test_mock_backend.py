@@ -47,6 +47,27 @@ def test_set_host_state():
         assert host_state == 1
 
 
+def test_set_bus_state():
+    backend = MockCifXBackend()
+    with backend:
+        backend.set_bus_state(False)
+        bus_state, _ = backend.get_status()
+        assert bus_state == 0  # CIFX_BUS_STATE_OFF
+
+        backend.set_bus_state(True)
+        bus_state, _ = backend.get_status()
+        assert bus_state == 1  # CIFX_BUS_STATE_ON
+
+
+def test_set_config_lock():
+    backend = MockCifXBackend()
+    with backend:
+        backend.set_config_lock(True)
+        assert backend._config_locked is True
+        backend.set_config_lock(False)
+        assert backend._config_locked is False
+
+
 def test_reset_clears_areas():
     backend = MockCifXBackend()
     with backend:
