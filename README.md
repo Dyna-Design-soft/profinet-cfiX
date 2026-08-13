@@ -107,6 +107,16 @@ persisted to `~/.cfix_gateway/gui_config.json` independent of the CLI's
 Either config dialog saves to disk and restarts the gateway on OK, so
 changes take effect immediately.
 
+**Gateway Configuration…**, **DLL Configuration…**, and **Restart
+Gateway** are locked behind a **Login** button — disabled until a correct
+password is entered, and re-locked every time the app starts (no "remember
+me"). **Diagnostics…** is read-only and is never gated. This is a local
+fat-finger guard, not real multi-user security — anyone with access to the
+machine already has access to the config files. The default password is
+`admin`; once logged in, use **Change Password…** to set your own (stored
+as a salted hash in `~/.cfix_gateway/auth.json`, separate from
+`gui_config.json`).
+
 ## Wire protocol
 
 The gateway passes raw PROFINET cyclic process-data bytes through as-is —
