@@ -11,9 +11,9 @@
     "enabled": true,
     "area": 0,
     "write_offset": 0,
-    "write_length": 95,
+    "write_length": 103,
     "read_offset": 0,
-    "read_length": 95,
+    "read_length": 103,
     "poll_interval_ms": 10
   },
   "cifx": {
