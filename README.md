@@ -94,8 +94,18 @@ pip install -e ".[gui]"
 python -m cfix_api.gui.app       # or the `cfix-gateway-gui` console script
 ```
 
-To build a standalone Windows `.exe` instead of running from source, see
-`packaging/README.md`.
+To build a standalone Windows `.exe` instead of running from source
+(one-file, windowed build — see `packaging/README.md` for a
+faster-starting folder-build alternative and troubleshooting):
+
+```powershell
+cd profinet-cfiX
+.venv\Scripts\pip install -e .[gui,build]
+.venv\Scripts\pyinstaller packaging\cfix_gateway_gui.spec
+```
+
+Output: `dist\CFIX Gateway.exe`. Must be built on Windows — PyInstaller
+output is platform-specific.
 
 The gateway starts automatically the moment the app opens — there's no
 Start button. It uses whatever was last saved (defaults to the mock
@@ -205,13 +215,17 @@ The `cifx` ctypes bindings (error codes, `BOARD_INFORMATION` /
 `xChannelBusState` calling convention) have been cross-checked against
 Hilscher's own "PyCifx" reference demo (distributed from their Global
 Support knowledgebase) and corrected to match it where they initially
-differed. The one remaining unverified piece is the `xChannelWatchdog`
-command numbering (stop/start/trigger), since Hilscher's demo doesn't
-exercise that call — verify it against the driver installed on the
-target Windows machine before relying on `watchdog_trigger()` in
-production. Everything else has not yet been exercised against a
-physical CIFX card in this repository's test environment (there is no
-Windows machine or card here) — do that verification on the target
-machine before relying on `HilscherCifXBackend` in production. The
-gateway framing, dispatch, and both transports are covered by the test
-suite via `MockCifXBackend`.
+differed. `xChannelConfigLock` (used to unlock the channel's
+configuration on startup, see `GatewayRunner.start()`) has separately
+been confirmed against a working Hilscher CIFX LabVIEW class library
+reference implementation's own block diagram, calling it with the exact
+same `(handle, cmd, state-out, timeout)` shape. The one remaining
+unverified piece is the `xChannelWatchdog` command numbering
+(stop/start/trigger), since neither of those sources exercises that call
+— verify it against the driver installed on the target Windows machine
+before relying on `watchdog_trigger()` in production. Everything else has
+been exercised against real Hilscher CIFX hardware and a real PROFINET
+IO controller/drive setup by the target deployment's own testing (there
+is no Windows machine or card in this repository's own test/CI
+environment — the test suite here only covers the gateway framing,
+dispatch, and both transports via `MockCifXBackend`).
